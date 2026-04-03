@@ -90,16 +90,16 @@
         settings.MaxOccupancy = 30;
         settings.RefreshRate = 72;
         settings.ClippingPlane = new BS.Vector2(0.05, 500);
-        settings.SpawnPoint = new BS.Vector4(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z, 180);
+        settings.SpawnPoint = new BS.Vector4(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z, 0);
 
         console.log("Colour Drop: Applying scene settings.");
         scene.SetSettings(settings);
-        scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 180, true);
+        scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 0, true);
 
         setTimeout(() => {
             console.log("Colour Drop: Re-applying settings via timeout.");
             scene.SetSettings(settings);
-            scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 180, true);
+            scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 0, true);
         }, 2000);
     }
 
@@ -113,7 +113,7 @@
         await floor.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.1, 0.1, 0.1, 1) }));
 
         // Buttons Container - Centered in lobby
-        const buttonGroup = new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y + 1, LOBBY_POS_RAW.z) });
+        const buttonGroup = new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(0, 1, 0) });
 
         // helper for buttons
         const createBtn = async (name, xPos, color, text, handler) => {
@@ -123,7 +123,7 @@
             await btn.AddComponent(new BS.BanterMaterial({ color: color }));
             btn.SetLayer(5);
 
-            const t = new BS.GameObject({ name: name + "Text", parent: btn, localPosition: new BS.Vector3(0, 0.2, 0), localEulerAngles: new BS.Vector3(90, 0, 0) });
+            const t = new BS.GameObject({ name: name + "Text", parent: btn, localPosition: new BS.Vector3(0, 0.25, 0), localEulerAngles: new BS.Vector3(90, 0, 0) });
             await t.AddComponent(new BS.BanterText({
                 text: text,
                 fontSize: 2,
@@ -161,14 +161,6 @@
             if (!isHost()) return;
             updateState({ status: "LOBBY", round: 0 });
         });
-
-        // Pillars
-        const pillarPos = [{ x: -15, z: -15 }, { x: 15, z: -15 }, { x: -15, z: 15 }, { x: 15, z: 15 }];
-        for (const p of pillarPos) {
-            const pillar = new BS.GameObject({ name: "Pillar", parent: root, localPosition: new BS.Vector3(p.x, GAME_HEIGHT / 2, p.z) });
-            await pillar.AddComponent(new BS.BanterCylinder({ radiusTop: 1, radiusBottom: 1, height: GAME_HEIGHT }));
-            await pillar.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.3, 0.3, 0.3, 1) }));
-        }
 
         // Death Zone
         const deadZone = new BS.GameObject({ name: "DeadZone", localPosition: new BS.Vector3(0, 5, 0) });
