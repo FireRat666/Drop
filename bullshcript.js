@@ -59,7 +59,6 @@
         scene = BS.BanterScene.GetInstance();
         setupSettings();
 
-        // Wait for Unity to be fully loaded before doing anything
         if (!scene.unityLoaded) {
             await new Promise(resolve => {
                 scene.On("unity-loaded", resolve);
@@ -92,7 +91,6 @@
         scene.SetSettings(settings);
         scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 180, true);
 
-        // Re-apply after a delay to ensure it sticks
         setTimeout(() => {
             scene.SetSettings(settings);
             scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 180, true);
@@ -102,28 +100,24 @@
     async function buildEnvironment() {
         const root = new BS.GameObject({ name: "Environment" });
 
-        // Lobby Floor
         const floor = new BS.GameObject({ name: "SpectatorLobby", parent: root, localPosition: new BS.Vector3(LOBBY_POS_RAW.x, 0, LOBBY_POS_RAW.z) });
         await floor.AddComponent(new BS.BanterBox({ width: 30, height: 0.5, depth: 30 }));
         await floor.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(30, 0.5, 30) }));
         await floor.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.1, 0.1, 0.1, 1) }));
 
-        // Buttons Container - Positioned clearly on the lobby floor
         const buttonGroup = new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(0, 1, 0) });
 
-        // helper for buttons - add text as a separate child object to ensure visibility
         const createBtn = async (name, xPos, color, text, handler) => {
             const btn = new BS.GameObject({ name: name, parent: buttonGroup, localPosition: new BS.Vector3(xPos, 0, 0) });
-            await btn.AddComponent(new BS.BanterBox({ width: 2, height: 0.6, depth: 1 }));
-            await btn.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(2, 0.6, 1) }));
+            await btn.AddComponent(new BS.BanterBox({ width: 2.2, height: 0.8, depth: 1.2 }));
+            await btn.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(2.2, 0.8, 1.2) }));
             await btn.AddComponent(new BS.BanterMaterial({ color: color }));
-            btn.SetLayer(5); // UI Layer
+            btn.SetLayer(5);
 
-            // Text on top of the button
-            const t = new BS.GameObject({ name: name + "Text", parent: btn, localPosition: new BS.Vector3(0, 0.4, 0), localEulerAngles: new BS.Vector3(90, 0, 0) });
+            const t = new BS.GameObject({ name: name + "Text", parent: btn, localPosition: new BS.Vector3(0, 0.5, 0), localEulerAngles: new BS.Vector3(90, 0, 0) });
             await t.AddComponent(new BS.BanterText({
                 text: text,
-                fontSize: 0.3,
+                fontSize: 1,
                 color: new BS.Vector4(1, 1, 1, 1),
                 horizontalAlignment: BS.HorizontalAlignment.Center,
                 verticalAlignment: BS.VerticalAlignment.Middle
@@ -133,33 +127,31 @@
             return btn;
         };
 
-        // All buttons grouped together in the lobby
-        await createBtn("JoinBtn", 0, new BS.Vector4(0, 0.5, 1, 1), "JOIN GAME", () => {
-            scene.SetUserProps({ inGame: "true" }, scene.localUser.uid);
-            scene.TeleportTo(new BS.Vector3(0, GAME_HEIGHT + 2, 0), 0, true);
-        });
-
-        await createBtn("HardModeBtn", -3, new BS.Vector4(0.8, 0.1, 0.1, 1), "HARD MODE: OFF", () => {
+        await createBtn("HardModeBtn", -6, new BS.Vector4(0.8, 0.1, 0.1, 1), "HARD MODE: OFF", () => {
             if (!isHost()) return;
             updateState({ hardMode: !gameState.hardMode });
         });
 
-        await createBtn("Timer5Btn", 3, new BS.Vector4(0.1, 0.8, 0.1, 1), "SET: 5S", () => {
+        await createBtn("JoinBtn", -3, new BS.Vector4(0, 0.5, 1, 1), "JOIN GAME", () => {
+            scene.SetUserProps({ inGame: "true" }, scene.localUser.uid);
+            scene.TeleportTo(new BS.Vector3(0, GAME_HEIGHT + 2, 0), 0, true);
+        });
+
+        await createBtn("Timer5Btn", 0, new BS.Vector4(0.1, 0.8, 0.1, 1), "SET: 5S", () => {
             if (!isHost()) return;
             updateState({ initialCountdown: 5 });
         });
 
-        await createBtn("Timer10Btn", 6, new BS.Vector4(0.1, 0.8, 0.1, 1), "SET: 10S", () => {
+        await createBtn("Timer10Btn", 3, new BS.Vector4(0.1, 0.8, 0.1, 1), "SET: 10S", () => {
             if (!isHost()) return;
             updateState({ initialCountdown: 10 });
         });
 
-        await createBtn("ResetBtn", 9, new BS.Vector4(0.5, 0.5, 0.5, 1), "RESET GAME", () => {
+        await createBtn("ResetBtn", 6, new BS.Vector4(0.5, 0.5, 0.5, 1), "RESET GAME", () => {
             if (!isHost()) return;
             updateState({ status: "LOBBY", round: 0 });
         });
 
-        // Pillars
         const pillarPos = [{ x: -15, z: -15 }, { x: 15, z: -15 }, { x: -15, z: 15 }, { x: 15, z: 15 }];
         for (const p of pillarPos) {
             const pillar = new BS.GameObject({ name: "Pillar", parent: root, localPosition: new BS.Vector3(p.x, GAME_HEIGHT / 2, p.z) });
@@ -167,7 +159,6 @@
             await pillar.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.3, 0.3, 0.3, 1) }));
         }
 
-        // Death Zone
         const deadZone = new BS.GameObject({ name: "DeadZone", localPosition: new BS.Vector3(0, 5, 0) });
         await deadZone.AddComponent(new BS.BoxCollider({ isTrigger: true, size: new BS.Vector3(100, 2, 100) }));
         await deadZone.AddComponent(new BS.BanterColliderEvents());
@@ -240,7 +231,6 @@
         gameState = JSON.parse(raw);
         updateVisuals();
 
-        // Update Button Labels in Lobby
         const hardBtnTextObj = await scene.Find("HardModeBtnText");
         if (hardBtnTextObj) {
             const txt = await hardBtnTextObj.GetComponent(BS.CT.BanterText);
@@ -298,7 +288,7 @@
         } else if (gameState.status === "SHOWING") {
             updateState({ status: "DROPPED", endTime: now + (TIMINGS.DROPPED * 1000) });
         } else if (gameState.status === "DROPPED") {
-            // Logic change: board reshuffles immediately if hard mode is on
+            // ONLY Change seed (reshuffle colors) if Hard Mode is ENABLED
             const nextSeed = gameState.hardMode ? Math.floor(Math.random() * 999999) : gameState.seed;
             updateState({
                 status: "RESETTING",
@@ -317,7 +307,6 @@
         updateState({
             status: "SHOWING",
             round: roundNum,
-            seed: Math.floor(Math.random() * 999999),
             targetColorIndex: Math.floor(Math.random() * COLORS.length),
             endTime: Date.now() + (duration * 1000)
         });
@@ -328,7 +317,6 @@
         scene.SetPublicSpaceProps({ [STATE_KEY]: JSON.stringify(next) });
     }
 
-    // --- Entry Point ---
     if (window.BS) {
         init();
     } else {
