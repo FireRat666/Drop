@@ -180,7 +180,7 @@
         await createBtn("MuteBtn", 6, new BS.Vector4(0.5, 0.2, 0.8, 1), "MUTE AUDIO", async (e) => {
             isMuted = !isMuted;
             const btnObj = e.detail.object || await scene.Find("MuteBtn");
-            const txt = await btnObj.GetComponent(BS.CT.BanterText) || await scene.Find("MuteBtnText").GetComponent(BS.CT.BanterText);
+            const txt = await btnObj.GetComponent(BS.CT.BanterText) || (await scene.Find("MuteBtnText")).GetComponent(BS.CT.BanterText);
             if (txt) txt.text = isMuted ? "UNMUTE AUDIO" : "MUTE AUDIO";
         });
 
