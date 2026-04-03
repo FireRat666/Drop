@@ -6,7 +6,7 @@
     const GRID_SIZE = 8;
     const TILE_SIZE = 3;
     const GAME_HEIGHT = 15;
-    const LOBBY_POS_RAW = { x: 0, y: 0.1, z: 40 };
+    const LOBBY_POS_RAW = { x: 0, y: 0.1, z: -40 };
 
     let COLORS = [
         { name: "Red", vec: [1, 0.1, 0.1, 1] },
@@ -107,13 +107,13 @@
         const root = new BS.GameObject({ name: "Environment" });
 
         // Lobby Floor
-        const floor = new BS.GameObject({ name: "SpectatorLobby", parent: root, localPosition: new BS.Vector3(LOBBY_POS_RAW.x, 0, LOBBY_POS_RAW.z) });
+        const floor = new BS.GameObject({ name: "SpectatorLobby", parent: root, localPosition: new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y - 0.05, LOBBY_POS_RAW.z) });
         await floor.AddComponent(new BS.BanterBox({ width: 30, height: 0.5, depth: 30 }));
         await floor.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(30, 0.5, 30) }));
         await floor.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.1, 0.1, 0.1, 1) }));
 
         // Buttons Container - Centered in lobby
-        const buttonGroup = new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(0, 1, 0) });
+        const buttonGroup = new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y + 1, LOBBY_POS_RAW.z) });
 
         // helper for buttons
         const createBtn = async (name, xPos, color, text, handler) => {
@@ -123,7 +123,7 @@
             await btn.AddComponent(new BS.BanterMaterial({ color: color }));
             btn.SetLayer(5);
 
-            const t = new BS.GameObject({ name: name + "Text", parent: btn, localPosition: new BS.Vector3(0, 0.5, 0), localEulerAngles: new BS.Vector3(90, 0, 0) });
+            const t = new BS.GameObject({ name: name + "Text", parent: btn, localPosition: new BS.Vector3(0, 0.2, 0), localEulerAngles: new BS.Vector3(90, 0, 0) });
             await t.AddComponent(new BS.BanterText({
                 text: text,
                 fontSize: 2,
