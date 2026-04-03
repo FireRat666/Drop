@@ -270,7 +270,7 @@
 
     async function setupAudio() {
         const audioRoot = await new BS.GameObject({ name: "Audio" }).Async();
-        audio.tick = await audioRoot.AddComponent(new BS.BanterAudioSource({ volume: 0.5, loop: false, playOnAwake: false }));
+        audio.tick = await audioRoot.AddComponent(new BS.BanterAudioSource({ volume: 0.3, loop: false, playOnAwake: false }));
     }
 
     function setupNetworking() {
