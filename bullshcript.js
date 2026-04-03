@@ -57,14 +57,18 @@
     async function init() {
         if (scene) return;
         scene = BS.BanterScene.GetInstance();
+
+        console.log("Colour Drop: Calling setupSettings before Unity load check.");
         setupSettings();
 
         if (!scene.unityLoaded) {
+            console.log("Colour Drop: Waiting for Unity...");
             await new Promise(resolve => {
                 scene.On("unity-loaded", resolve);
                 window.addEventListener("unity-loaded", resolve, { once: true });
             });
         }
+        console.log("Colour Drop: Unity Loaded!");
 
         COLORS = COLORS.map(c => ({ ...c, vec: new BS.Vector4(c.vec[0], c.vec[1], c.vec[2], c.vec[3]) }));
 
@@ -88,10 +92,12 @@
         settings.ClippingPlane = new BS.Vector2(0.05, 500);
         settings.SpawnPoint = new BS.Vector4(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z, 180);
 
+        console.log("Colour Drop: Applying scene settings.");
         scene.SetSettings(settings);
         scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 180, true);
 
         setTimeout(() => {
+            console.log("Colour Drop: Re-applying settings via timeout.");
             scene.SetSettings(settings);
             scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 180, true);
         }, 2000);
@@ -100,24 +106,27 @@
     async function buildEnvironment() {
         const root = new BS.GameObject({ name: "Environment" });
 
+        // Lobby Floor
         const floor = new BS.GameObject({ name: "SpectatorLobby", parent: root, localPosition: new BS.Vector3(LOBBY_POS_RAW.x, 0, LOBBY_POS_RAW.z) });
         await floor.AddComponent(new BS.BanterBox({ width: 30, height: 0.5, depth: 30 }));
         await floor.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(30, 0.5, 30) }));
         await floor.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.1, 0.1, 0.1, 1) }));
 
+        // Buttons Container - Centered in lobby
         const buttonGroup = new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(0, 1, 0) });
 
+        // helper for buttons
         const createBtn = async (name, xPos, color, text, handler) => {
             const btn = new BS.GameObject({ name: name, parent: buttonGroup, localPosition: new BS.Vector3(xPos, 0, 0) });
-            await btn.AddComponent(new BS.BanterBox({ width: 2.2, height: 0.8, depth: 1.2 }));
-            await btn.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(2.2, 0.8, 1.2) }));
+            await btn.AddComponent(new BS.BanterBox({ width: 1, height: 0.4, depth: 0.5 }));
+            await btn.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(1, 0.4, 0.5) }));
             await btn.AddComponent(new BS.BanterMaterial({ color: color }));
             btn.SetLayer(5);
 
             const t = new BS.GameObject({ name: name + "Text", parent: btn, localPosition: new BS.Vector3(0, 0.5, 0), localEulerAngles: new BS.Vector3(90, 0, 0) });
             await t.AddComponent(new BS.BanterText({
                 text: text,
-                fontSize: 1,
+                fontSize: 2,
                 color: new BS.Vector4(1, 1, 1, 1),
                 horizontalAlignment: BS.HorizontalAlignment.Center,
                 verticalAlignment: BS.VerticalAlignment.Middle
@@ -127,6 +136,7 @@
             return btn;
         };
 
+        // Aligning buttons strictly: Join at -3, HardMode at -6, others to the right
         await createBtn("HardModeBtn", -6, new BS.Vector4(0.8, 0.1, 0.1, 1), "HARD MODE: OFF", () => {
             if (!isHost()) return;
             updateState({ hardMode: !gameState.hardMode });
@@ -152,6 +162,7 @@
             updateState({ status: "LOBBY", round: 0 });
         });
 
+        // Pillars
         const pillarPos = [{ x: -15, z: -15 }, { x: 15, z: -15 }, { x: -15, z: 15 }, { x: 15, z: 15 }];
         for (const p of pillarPos) {
             const pillar = new BS.GameObject({ name: "Pillar", parent: root, localPosition: new BS.Vector3(p.x, GAME_HEIGHT / 2, p.z) });
@@ -159,14 +170,18 @@
             await pillar.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.3, 0.3, 0.3, 1) }));
         }
 
+        // Death Zone
         const deadZone = new BS.GameObject({ name: "DeadZone", localPosition: new BS.Vector3(0, 5, 0) });
         await deadZone.AddComponent(new BS.BoxCollider({ isTrigger: true, size: new BS.Vector3(100, 2, 100) }));
         await deadZone.AddComponent(new BS.BanterColliderEvents());
-        deadZone.On("trigger-enter", () => {
-            if (scene.localUser.props.inGame === "true") {
-                console.log("Player fell! Teleporting to lobby.");
-                scene.SetUserProps({ inGame: "false" }, scene.localUser.uid);
-                scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 180, true);
+        deadZone.On("trigger-enter", (e) => {
+            console.log("DeadZone: trigger-enter detected");
+            if (e.detail.user && e.detail.user.isLocal) {
+                if (scene.localUser.props.inGame === "true") {
+                    console.log("DeadZone: Local player fell! Teleporting to lobby.");
+                    scene.SetUserProps({ inGame: "false" }, scene.localUser.uid);
+                    scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 180, true);
+                }
             }
         });
     }
@@ -284,11 +299,13 @@
         if (now < gameState.endTime) return;
 
         if (gameState.status === "LOBBY") {
-            startNextRound(1);
+            // Seed randomized once on game start
+            const initialSeed = Math.floor(Math.random() * 999999);
+            startNextRound(1, initialSeed);
         } else if (gameState.status === "SHOWING") {
             updateState({ status: "DROPPED", endTime: now + (TIMINGS.DROPPED * 1000) });
         } else if (gameState.status === "DROPPED") {
-            // ONLY Change seed (reshuffle colors) if Hard Mode is ENABLED
+            // ONLY Change seed if Hard Mode is ENABLED. Triggers as soon as status becomes RESETTING.
             const nextSeed = gameState.hardMode ? Math.floor(Math.random() * 999999) : gameState.seed;
             updateState({
                 status: "RESETTING",
@@ -296,17 +313,18 @@
                 endTime: now + (TIMINGS.RESETTING * 1000)
             });
         } else if (gameState.status === "RESETTING") {
-            startNextRound(gameState.round + 1);
+            startNextRound(gameState.round + 1, gameState.seed);
         }
     }
 
-    function startNextRound(roundNum) {
+    function startNextRound(roundNum, seed) {
         const speedScale = gameState.hardMode ? 0.6 : 0.35;
         const duration = Math.max(1.8, gameState.initialCountdown - (roundNum * speedScale));
 
         updateState({
             status: "SHOWING",
             round: roundNum,
+            seed: seed,
             targetColorIndex: Math.floor(Math.random() * COLORS.length),
             endTime: Date.now() + (duration * 1000)
         });
