@@ -1,15 +1,12 @@
 (function () {
     let scene;
 
-    // --- Configuration (Arrays/Primitives only, no BS calls yet) ---
+    // --- Configuration ---
     const STATE_KEY = "colour_drop_game_state";
     const GRID_SIZE = 8;
     const TILE_SIZE = 3;
     const GAME_HEIGHT = 15;
-
-    // We'll store these as plain objects and convert to BS.Vector3/Vector4 inside init()
-    const LOBBY_POS_RAW = { x: 0, y: 0, z: 40 };
-    const GAME_CENTER_RAW = { x: 0, y: GAME_HEIGHT, z: 0 };
+    const LOBBY_POS_RAW = { x: 0, y: 0.1, z: 40 };
 
     let COLORS = [
         { name: "Red", vec: [1, 0.1, 0.1, 1] },
@@ -35,15 +32,13 @@
         round: 0,
         targetColorIndex: 0,
         seed: 0,
-        endTime: 0
+        endTime: 0,
+        hardMode: false,
+        initialCountdown: 7
     };
 
     let tiles = [];
-    let ui = {
-        root: null,
-        displays: []
-    };
-
+    let ui = { root: null, displays: [] };
     let audio = { tick: null };
 
     // --- Utils ---
@@ -62,6 +57,7 @@
     async function init() {
         if (scene) return;
         scene = BS.BanterScene.GetInstance();
+        setupSettings();
 
         if (!scene.unityLoaded) {
             await new Promise(resolve => {
@@ -70,10 +66,8 @@
             });
         }
 
-        // Now BS is guaranteed to be ready
         COLORS = COLORS.map(c => ({ ...c, vec: new BS.Vector4(c.vec[0], c.vec[1], c.vec[2], c.vec[3]) }));
 
-        setupSettings();
         await buildEnvironment();
         await buildGrid();
         await setupUI();
@@ -89,22 +83,79 @@
         const settings = new BS.SceneSettings();
         settings.EnableTeleport = true;
         settings.EnableJump = true;
-        // Spawn players in the lobby (z=40)
-        settings.SpawnPoint = new BS.Vector4(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y + 0.5, LOBBY_POS_RAW.z, 180);
+        settings.MaxOccupancy = 30;
+        settings.RefreshRate = 72;
+        settings.ClippingPlane = new BS.Vector2(0.05, 500);
+        settings.SpawnPoint = new BS.Vector4(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z, 180);
+
         scene.SetSettings(settings);
+        // Instant teleport for local user on load to ensure they are in lobby
+        scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 180, true);
+
+        // Re-apply after a delay as per user request to be sure
+        setTimeout(() => {
+            scene.SetSettings(settings);
+            scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 180, true);
+        }, 2000);
     }
 
     async function buildEnvironment() {
         const root = new BS.GameObject({ name: "Environment" });
 
-        // --- Lobby Floor (Next to game, not under it) ---
-        const lobbyPos = new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z);
-        const floor = new BS.GameObject({ name: "SpectatorLobby", parent: root, localPosition: lobbyPos });
+        // Lobby Floor
+        const floor = new BS.GameObject({ name: "SpectatorLobby", parent: root, localPosition: new BS.Vector3(LOBBY_POS_RAW.x, 0, LOBBY_POS_RAW.z) });
         await floor.AddComponent(new BS.BanterBox({ width: 30, height: 0.5, depth: 30 }));
         await floor.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(30, 0.5, 30) }));
         await floor.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.1, 0.1, 0.1, 1) }));
 
-        // --- Pillars for Game Platform ---
+        // Buttons Container
+        const buttonGroup = new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(0, 1, -10) });
+
+        // helper for buttons
+        const createBtn = async (name, xPos, color, text, handler) => {
+            const btn = new BS.GameObject({ name: name, parent: buttonGroup, localPosition: new BS.Vector3(xPos, 0, 0) });
+            await btn.AddComponent(new BS.BanterBox({ width: 2, height: 0.6, depth: 1 }));
+            await btn.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(2, 0.6, 1) }));
+            await btn.AddComponent(new BS.BanterMaterial({ color: color }));
+            btn.SetLayer(5);
+
+            const t = new BS.GameObject({ name: "Txt", parent: btn, localPosition: new BS.Vector3(0, 0.4, 0), localEulerAngles: new BS.Vector3(90, 0, 0) });
+            await t.AddComponent(new BS.BanterText({ text: text, fontSize: 0.3, color: new BS.Vector4(1, 1, 1, 1), horizontalAlignment: BS.HorizontalAlignment.Center }));
+            btn.On("click", handler);
+            return btn;
+        };
+
+        // Join Button
+        await createBtn("JoinBtn", 0, new BS.Vector4(0, 0.5, 1, 1), "JOIN GAME", () => {
+            scene.SetUserProps({ inGame: "true" }, scene.localUser.uid);
+            scene.TeleportTo(new BS.Vector3(0, GAME_HEIGHT + 2, 0), 0, true);
+        });
+
+        // Hard Mode Toggle
+        await createBtn("HardModeBtn", -3, new BS.Vector4(0.8, 0.1, 0.1, 1), "HARD MODE: OFF", () => {
+            if (!isHost()) return;
+            updateState({ hardMode: !gameState.hardMode });
+        });
+
+        // Timer Adjust (5s)
+        await createBtn("Timer5Btn", 3, new BS.Vector4(0.1, 0.8, 0.1, 1), "SET: 5S", () => {
+            if (!isHost()) return;
+            updateState({ initialCountdown: 5 });
+        });
+
+        // Timer Adjust (10s)
+        await createBtn("Timer10Btn", 6, new BS.Vector4(0.1, 0.8, 0.1, 1), "SET: 10S", () => {
+            if (!isHost()) return;
+            updateState({ initialCountdown: 10 });
+        });
+
+        // Reset Button
+        await createBtn("ResetBtn", 9, new BS.Vector4(0.5, 0.5, 0.5, 1), "RESET GAME", () => {
+            if (!isHost()) return;
+            updateState({ status: "LOBBY", round: 0 });
+        });
+
+        // Pillars
         const pillarPos = [{ x: -15, z: -15 }, { x: 15, z: -15 }, { x: -15, z: 15 }, { x: 15, z: 15 }];
         for (const p of pillarPos) {
             const pillar = new BS.GameObject({ name: "Pillar", parent: root, localPosition: new BS.Vector3(p.x, GAME_HEIGHT / 2, p.z) });
@@ -112,39 +163,21 @@
             await pillar.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.3, 0.3, 0.3, 1) }));
         }
 
-        // --- Join Game Button (In the Lobby) ---
-        const btn = new BS.GameObject({ name: "JoinButton", parent: floor, localPosition: new BS.Vector3(0, 1, -10) });
-        await btn.AddComponent(new BS.BanterBox({ width: 2, height: 0.6, depth: 1 }));
-        await btn.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(2, 0.6, 1) }));
-        await btn.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0, 0.5, 1, 1) }));
-        btn.SetLayer(5); // UI Layer
-
-        const btnText = new BS.GameObject({ name: "BtnText", parent: btn, localPosition: new BS.Vector3(0, 0.4, 0), localEulerAngles: new BS.Vector3(90, 0, 0) });
-        await btnText.AddComponent(new BS.BanterText({ text: "JOIN GAME", fontSize: 0.4, color: new BS.Vector4(1, 1, 1, 1) }));
-
-        btn.On("click", () => {
-            console.log("Player joined game!");
-            scene.SetUserProps({ inGame: "true" }, scene.localUser.uid);
-            scene.TeleportTo(new BS.Vector3(0, GAME_HEIGHT + 2, 0), 0, true);
-        });
-
-        // --- Death Zone (Trigger beneath the board) ---
+        // Death Zone
         const deadZone = new BS.GameObject({ name: "DeadZone", localPosition: new BS.Vector3(0, 5, 0) });
         await deadZone.AddComponent(new BS.BoxCollider({ isTrigger: true, size: new BS.Vector3(100, 2, 100) }));
         await deadZone.AddComponent(new BS.BanterColliderEvents());
-        deadZone.On("trigger-enter", (e) => {
-            // Only teleport the local player if they were actually playing
+        deadZone.On("trigger-enter", () => {
             if (scene.localUser.props.inGame === "true") {
                 console.log("Player fell! Teleporting to lobby.");
                 scene.SetUserProps({ inGame: "false" }, scene.localUser.uid);
-                scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y + 0.5, LOBBY_POS_RAW.z), 180, true);
+                scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 180, true);
             }
         });
     }
 
     async function buildGrid() {
-        const gameCenter = new BS.Vector3(GAME_CENTER_RAW.x, GAME_CENTER_RAW.y, GAME_CENTER_RAW.z);
-        const gridRoot = new BS.GameObject({ name: "GridRoot", localPosition: gameCenter });
+        const gridRoot = new BS.GameObject({ name: "GridRoot", localPosition: new BS.Vector3(0, GAME_HEIGHT, 0) });
         const offset = (GRID_SIZE * TILE_SIZE) / 2 - (TILE_SIZE / 2);
 
         for (let x = 0; x < GRID_SIZE; x++) {
@@ -164,26 +197,19 @@
     }
 
     async function setupUI() {
-        // UI is 12 meters above the board
         const uiAnchor = new BS.GameObject({ name: "UIAnchor", localPosition: new BS.Vector3(0, GAME_HEIGHT + 12, 0) });
         ui.root = uiAnchor;
 
         const createDisplay = async (name, pos, rot) => {
             const panel = new BS.GameObject({ name: name, parent: uiAnchor, localPosition: pos, localEulerAngles: rot });
-
-            // Large text label for countdown/instructions
             const textObj = new BS.GameObject({ name: "Label", parent: panel, localPosition: new BS.Vector3(0, 4, 0) });
-            const textComp = await textObj.AddComponent(new BS.BanterText({ text: "GET READY", fontSize: 12, color: new BS.Vector4(1, 1, 1, 1), horizontalAlignment: BS.HorizontalAlignment.Center }));
-
-            // Large color preview cube next to the text
+            const textComp = await textObj.AddComponent(new BS.BanterText({ text: "COLOUR DROP", fontSize: 12, color: new BS.Vector4(1, 1, 1, 1), horizontalAlignment: BS.HorizontalAlignment.Center }));
             const cube = new BS.GameObject({ name: "ColorCube", parent: panel, localPosition: new BS.Vector3(0, -1, 0) });
             await cube.AddComponent(new BS.BanterBox({ width: 5, height: 5, depth: 5 }));
             const mat = await cube.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(1, 1, 1, 1) }));
-
-            return { text: textComp, mat: mat, obj: panel, cube: cube };
+            return { text: textComp, mat: mat, cube: cube };
         };
 
-        // Create 4 displays facing outwards from the center of the UI anchor
         ui.displays = [
             await createDisplay("DisplayN", new BS.Vector3(0, 0, 15), new BS.Vector3(0, 0, 0)),
             await createDisplay("DisplayS", new BS.Vector3(0, 0, -15), new BS.Vector3(0, 180, 0)),
@@ -209,6 +235,13 @@
         if (!raw) return;
         gameState = JSON.parse(raw);
         updateVisuals();
+
+        // Update Button Labels in Lobby
+        const hardBtn = scene.Find("HardModeBtn");
+        if (hardBtn) {
+            const txt = hardBtn.Find("Txt").GetComponent(BS.CT.BanterText);
+            txt.text = `HARD MODE: ${gameState.hardMode ? "ON" : "OFF"}`;
+        }
     }
 
     function updateVisuals() {
@@ -261,14 +294,25 @@
         } else if (gameState.status === "SHOWING") {
             updateState({ status: "DROPPED", endTime: now + (TIMINGS.DROPPED * 1000) });
         } else if (gameState.status === "DROPPED") {
-            updateState({ status: "RESETTING", endTime: now + (TIMINGS.RESETTING * 1000) });
+            // Logic change: In normal mode, seed stays the same for 1 round to keep board static.
+            // In hard mode, we generate a new seed here to change board immediately.
+            const nextSeed = gameState.hardMode ? Math.floor(Math.random() * 999999) : gameState.seed;
+            updateState({
+                status: "RESETTING",
+                seed: nextSeed,
+                endTime: now + (TIMINGS.RESETTING * 1000)
+            });
         } else if (gameState.status === "RESETTING") {
             startNextRound(gameState.round + 1);
         }
     }
 
     function startNextRound(roundNum) {
-        const duration = Math.max(1.8, TIMINGS.SHOWING - (roundNum * 0.35));
+        // Hard mode makes the countdown even faster
+        const speedScale = gameState.hardMode ? 0.6 : 0.35;
+        const duration = Math.max(1.8, gameState.initialCountdown - (roundNum * speedScale));
+
+        // Always generate new seed for the next round's "Showing" phase
         updateState({
             status: "SHOWING",
             round: roundNum,
