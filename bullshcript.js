@@ -2,7 +2,7 @@
     let scene;
 
     // --- Configuration ---
-    const STATE_KEY = "colour_drop_game_state";
+    const STATE_KEY = "drop_game_state";
     const USER_DATA_KEY_PREFIX = "cd_user:";
     const GRID_SIZE = 8;
     const TILE_SIZE = 3;
@@ -72,17 +72,17 @@
         if (scene) return;
         scene = BS.BanterScene.GetInstance();
 
-        console.log("Colour Drop: Calling setupSettings before Unity load check.");
+        console.log("DROP GAME: Calling setupSettings before Unity load check.");
         setupSettings();
 
         if (!scene.unityLoaded) {
-            console.log("Colour Drop: Waiting for Unity...");
+            console.log("DROP GAME: Waiting for Unity...");
             await new Promise(resolve => {
                 scene.On("unity-loaded", resolve);
                 window.addEventListener("unity-loaded", resolve, { once: true });
             });
         }
-        console.log("Colour Drop: Unity Loaded!");
+        console.log("DROP GAME: Unity Loaded!");
 
         COLORS = COLORS.map(c => ({ ...c, vec: new BS.Vector4(c.vec[0], c.vec[1], c.vec[2], c.vec[3]) }));
 
@@ -94,7 +94,7 @@
         setupNetworking();
 
         setInterval(update, 100);
-        console.log("Colour Drop: Init Complete");
+        console.log("DROP GAME: Init Complete");
     }
 
     function setupSettings() {
@@ -106,12 +106,12 @@
         settings.ClippingPlane = new BS.Vector2(0.05, 500);
         settings.SpawnPoint = new BS.Vector4(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z, 0);
 
-        console.log("Colour Drop: Applying scene settings.");
+        console.log("DROP GAME: Applying scene settings.");
         scene.SetSettings(settings);
         scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 0, true);
 
         setTimeout(() => {
-            console.log("Colour Drop: Re-applying settings via timeout.");
+            console.log("DROP GAME: Re-applying settings via timeout.");
             scene.SetSettings(settings);
             scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 0, true);
         }, 2000);
@@ -285,7 +285,7 @@
         const createDisplay = async (name, pos, rot) => {
             const panel = await new BS.GameObject({ name: name, parent: uiAnchor, localPosition: pos, localEulerAngles: rot }).Async();
             const textObj = await new BS.GameObject({ name: "Label", parent: panel, localPosition: new BS.Vector3(0, 4, 0) }).Async();
-            const textComp = await textObj.AddComponent(new BS.BanterText({ text: "COLOUR DROP", fontSize: 12, color: new BS.Vector4(1, 1, 1, 1), horizontalAlignment: BS.HorizontalAlignment.Center }));
+            const textComp = await textObj.AddComponent(new BS.BanterText({ text: "DROP GAME", fontSize: 12, color: new BS.Vector4(1, 1, 1, 1), horizontalAlignment: BS.HorizontalAlignment.Center }));
             const cube = await new BS.GameObject({ name: "ColorCube", parent: panel, localPosition: new BS.Vector3(0, -1, 0) }).Async();
             await cube.AddComponent(new BS.BanterBox({ width: 5, height: 5, depth: 5 }));
             const mat = await cube.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(1, 1, 1, 1) }));
@@ -412,7 +412,7 @@
                 lastTick = remaining;
             }
         } else if (gameState.status === "LOBBY") {
-            displayStr = "COLOUR DROP";
+            displayStr = "DROP GAME";
         } else if (gameState.status === "DROPPED") {
             displayStr = "!!!";
         } else {
