@@ -5,8 +5,8 @@
     const STATE_KEY = "colour_drop_game_state";
     const GRID_SIZE = 8;
     const TILE_SIZE = 3;
-    const GAME_HEIGHT = 15;
-    const LOBBY_POS_RAW = { x: 0, y: 0.1, z: -40 };
+    const GAME_HEIGHT = 10;
+    const LOBBY_POS_RAW = { x: 0, y: 10.1, z: -40 };
 
     let COLORS = [
         { name: "Red", vec: [1, 0.1, 0.1, 1] },
@@ -40,6 +40,7 @@
     let tiles = [];
     let ui = { root: null, displays: [] };
     let audio = { tick: null };
+    let isLocalInArena = false; // Internal tracking using colliders
 
     // --- Utils ---
     const seededRandom = (seed) => {
@@ -112,10 +113,9 @@
         await floor.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(30, 0.5, 30) }));
         await floor.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.1, 0.1, 0.1, 1) }));
 
-        // Buttons Container - Centered in lobby
+        // Buttons Container
         const buttonGroup = await new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(0, 1, 0) }).Async();
 
-        // helper for buttons
         const createBtn = async (name, xPos, color, text, handler) => {
             const btn = await new BS.GameObject({ name: name, parent: buttonGroup, localPosition: new BS.Vector3(xPos, 0, 0) }).Async();
             await btn.AddComponent(new BS.BanterBox({ width: 1, height: 0.4, depth: 0.5 }));
@@ -136,14 +136,12 @@
             return btn;
         };
 
-        // Aligning buttons strictly: Join at -3, HardMode at -6, others to the right
         await createBtn("HardModeBtn", -6, new BS.Vector4(0.8, 0.1, 0.1, 1), "HARD MODE: OFF", () => {
             if (!isHost()) return;
             updateState({ hardMode: !gameState.hardMode });
         });
 
         await createBtn("JoinBtn", -3, new BS.Vector4(0, 0.5, 1, 1), "JOIN GAME", () => {
-            scene.SetUserProps({ inGame: "true" }, scene.localUser.uid);
             scene.TeleportTo(new BS.Vector3(0, GAME_HEIGHT + 2, 0), 0, true);
         });
 
@@ -162,13 +160,36 @@
             updateState({ status: "LOBBY", round: 0 });
         });
 
-        const deadZone = await new BS.GameObject({ name: "DeadZone", localPosition: new BS.Vector3(0, 5, 0) }).Async();
+        // Arena Tracker Trigger (Encompasses the tiles area)
+        const arenaTracker = await new BS.GameObject({ name: "ArenaTracker", localPosition: new BS.Vector3(0, GAME_HEIGHT + 2, 0) }).Async();
+        await arenaTracker.AddComponent(new BS.BoxCollider({ isTrigger: true, size: new BS.Vector3(GRID_SIZE * TILE_SIZE, 5, GRID_SIZE * TILE_SIZE) }));
+        await arenaTracker.AddComponent(new BS.BanterColliderEvents());
+        arenaTracker.On("trigger-enter", (e) => {
+            if (e.detail.user && e.detail.user.isLocal) {
+                console.log("Local player entered ARENA zone.");
+                isLocalInArena = true;
+            }
+        });
+        arenaTracker.On("trigger-exit", (e) => {
+            if (e.detail.user && e.detail.user.isLocal) {
+                console.log("Local player left ARENA zone.");
+                isLocalInArena = false;
+            }
+        });
+
+        // Death Zone
+        const deadZone = await new BS.GameObject({ name: "DeadZone", localPosition: new BS.Vector3(0, GAME_HEIGHT - 2, 0) }).Async();
         await deadZone.AddComponent(new BS.BoxCollider({ isTrigger: true, size: new BS.Vector3(100, 2, 100) }));
         await deadZone.AddComponent(new BS.BanterColliderEvents());
         deadZone.On("trigger-enter", (e) => {
             if (e.detail.user && e.detail.user.isLocal) {
-                if (scene.localUser.props.inGame === "true") {
-                    scene.SetUserProps({ inGame: "false" }, scene.localUser.uid);
+                // If they are in the arena area or just falling, teleport them to lobby
+                // We use isLocalInArena to check if they were part of the game
+                if (isLocalInArena) {
+                    console.log("Local player fell from Arena! Teleporting to lobby.");
+                    scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 0, true);
+                } else {
+                    console.log("Local player fell into trigger! Teleporting to lobby.");
                     scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 0, true);
                 }
             }
