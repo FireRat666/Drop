@@ -1,13 +1,15 @@
 (function () {
     let scene;
 
-    // --- Constants & Config ---
+    // --- Configuration (Arrays/Primitives only, no BS calls yet) ---
     const STATE_KEY = "colour_drop_game_state";
     const GRID_SIZE = 8;
     const TILE_SIZE = 3;
     const GAME_HEIGHT = 15;
-    const LOBBY_POS = new BS.Vector3(0, 0, 40); // Lobby is next to the game
-    const GAME_CENTER = new BS.Vector3(0, GAME_HEIGHT, 0);
+
+    // We'll store these as plain objects and convert to BS.Vector3/Vector4 inside init()
+    const LOBBY_POS_RAW = { x: 0, y: 0, z: 40 };
+    const GAME_CENTER_RAW = { x: 0, y: GAME_HEIGHT, z: 0 };
 
     let COLORS = [
         { name: "Red", vec: [1, 0.1, 0.1, 1] },
@@ -68,6 +70,7 @@
             });
         }
 
+        // Now BS is guaranteed to be ready
         COLORS = COLORS.map(c => ({ ...c, vec: new BS.Vector4(c.vec[0], c.vec[1], c.vec[2], c.vec[3]) }));
 
         setupSettings();
@@ -87,7 +90,7 @@
         settings.EnableTeleport = true;
         settings.EnableJump = true;
         // Spawn players in the lobby (z=40)
-        settings.SpawnPoint = new BS.Vector4(LOBBY_POS.x, LOBBY_POS.y + 0.5, LOBBY_POS.z, 180);
+        settings.SpawnPoint = new BS.Vector4(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y + 0.5, LOBBY_POS_RAW.z, 180);
         scene.SetSettings(settings);
     }
 
@@ -95,7 +98,8 @@
         const root = new BS.GameObject({ name: "Environment" });
 
         // --- Lobby Floor (Next to game, not under it) ---
-        const floor = new BS.GameObject({ name: "SpectatorLobby", parent: root, localPosition: LOBBY_POS });
+        const lobbyPos = new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z);
+        const floor = new BS.GameObject({ name: "SpectatorLobby", parent: root, localPosition: lobbyPos });
         await floor.AddComponent(new BS.BanterBox({ width: 30, height: 0.5, depth: 30 }));
         await floor.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(30, 0.5, 30) }));
         await floor.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.1, 0.1, 0.1, 1) }));
@@ -133,13 +137,14 @@
             if (scene.localUser.props.inGame === "true") {
                 console.log("Player fell! Teleporting to lobby.");
                 scene.SetUserProps({ inGame: "false" }, scene.localUser.uid);
-                scene.TeleportTo(new BS.Vector3(LOBBY_POS.x, LOBBY_POS.y + 0.5, LOBBY_POS.z), 180, true);
+                scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y + 0.5, LOBBY_POS_RAW.z), 180, true);
             }
         });
     }
 
     async function buildGrid() {
-        const gridRoot = new BS.GameObject({ name: "GridRoot", localPosition: GAME_CENTER });
+        const gameCenter = new BS.Vector3(GAME_CENTER_RAW.x, GAME_CENTER_RAW.y, GAME_CENTER_RAW.z);
+        const gridRoot = new BS.GameObject({ name: "GridRoot", localPosition: gameCenter });
         const offset = (GRID_SIZE * TILE_SIZE) / 2 - (TILE_SIZE / 2);
 
         for (let x = 0; x < GRID_SIZE; x++) {
