@@ -108,7 +108,7 @@
     }
 
     async function buildEnvironment() {
-        const root = new BS.GameObject({ name: "Environment" });
+        const root = await new BS.GameObject({ name: "Environment" }).Async();
 
         // Lobby Floor
         const floor = await new BS.GameObject({ name: "SpectatorLobby", parent: root, localPosition: new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y - 0.05, LOBBY_POS_RAW.z) }).Async();
@@ -116,6 +116,7 @@
         await floor.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(30, 0.5, 30) }));
         await floor.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.1, 0.1, 0.1, 1) }));
 
+        // Rules Text (One side of the lobby)
         const rulesObj = await new BS.GameObject({ name: "RulesText", parent: floor, localPosition: new BS.Vector3(-12, 2, 0), localEulerAngles: new BS.Vector3(0, -90, 0) }).Async();
         await rulesObj.AddComponent(new BS.BanterText({
             text: "<size=1.5><b>HOW TO PLAY</b></size>\n\n1. Click <b>JOIN GAME</b> to teleport.\n2. Look at the displays for the <b>TARGET COLOR</b>.\n3. Stand on a matching tile before time runs out.\n4. All other tiles will drop!\n5. Survive as long as you can.\n\n<color=#ffcc00>Hard Mode: Randomizes board every round!</color>",
@@ -124,6 +125,7 @@
             horizontalAlignment: BS.HorizontalAlignment.Left
         }));
 
+        // Scoreboard (Other side of the lobby)
         const scoreObj = await new BS.GameObject({ name: "Scoreboard", parent: floor, localPosition: new BS.Vector3(12, 2, 0), localEulerAngles: new BS.Vector3(0, 90, 0) }).Async();
         scoreboardText = await scoreObj.AddComponent(new BS.BanterText({
             text: "<b>SCOREBOARD</b>\n\nWaiting for data...",
@@ -189,6 +191,7 @@
             updateState({ status: "LOBBY", round: 0 });
         });
 
+        // Arena Tracker Trigger
         const arenaTracker = await new BS.GameObject({ name: "ArenaTracker", localPosition: new BS.Vector3(0, GAME_HEIGHT + 2, 0) }).Async();
         await arenaTracker.AddComponent(new BS.BoxCollider({ isTrigger: true, size: new BS.Vector3(GRID_SIZE * TILE_SIZE, 5, GRID_SIZE * TILE_SIZE) }));
         await arenaTracker.AddComponent(new BS.BanterColliderEvents());
@@ -214,14 +217,11 @@
         await deadZone.AddComponent(new BS.BanterColliderEvents());
         deadZone.On("trigger-enter", (e) => {
             if (e.detail.user && e.detail.user.isLocal) {
-                if (isLocalInArena) {
-                    console.log("Local player fell from Arena! Incrementing death count.");
-                    incrementScore("falls");
-                    scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 0, true);
-                } else {
-                    console.log("Local player fell into trigger! Teleporting to lobby.");
-                    scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 0, true);
-                }
+                console.log("Local player entered DeadZone.");
+                // Always increment score and teleport if a local player enters the deadZone
+                console.log("Local player fell! Incrementing death count and teleporting to lobby.");
+                incrementScore("falls");
+                scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 0, true);
             }
         });
     }
@@ -309,8 +309,7 @@
         let scoreStr = "<b>SCOREBOARD</b>\n\n";
         const state = scene.spaceState.public;
 
-        // Collate stats from space state
-        const players = {}; // uid -> { name, falls }
+        const players = {};
 
         Object.keys(state).forEach(key => {
             if (key.startsWith("cd_falls:")) {
