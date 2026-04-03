@@ -34,13 +34,15 @@
         seed: 0,
         endTime: 0,
         hardMode: false,
-        initialCountdown: 7
+        initialCountdown: 7,
+        activePlayers: 0
     };
 
     let tiles = [];
     let ui = { root: null, displays: [] };
     let audio = { tick: null };
     let isLocalInArena = false; // Internal tracking using colliders
+    let isMuted = false;
     let scoreboardText = null;
 
     // --- Utils ---
@@ -114,8 +116,7 @@
         await floor.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(30, 0.5, 30) }));
         await floor.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.1, 0.1, 0.1, 1) }));
 
-        // Rules Text (One side of the lobby)
-        const rulesObj = await new BS.GameObject({ name: "RulesText", parent: floor, localPosition: new BS.Vector3(-12, 2, 0), localEulerAngles: new BS.Vector3(0, 90, 0) }).Async();
+        const rulesObj = await new BS.GameObject({ name: "RulesText", parent: floor, localPosition: new BS.Vector3(-12, 2, 0), localEulerAngles: new BS.Vector3(0, -90, 0) }).Async();
         await rulesObj.AddComponent(new BS.BanterText({
             text: "<size=1.5><b>HOW TO PLAY</b></size>\n\n1. Click <b>JOIN GAME</b> to teleport.\n2. Look at the displays for the <b>TARGET COLOR</b>.\n3. Stand on a matching tile before time runs out.\n4. All other tiles will drop!\n5. Survive as long as you can.\n\n<color=#ffcc00>Hard Mode: Randomizes board every round!</color>",
             fontSize: 0.6,
@@ -123,8 +124,7 @@
             horizontalAlignment: BS.HorizontalAlignment.Left
         }));
 
-        // Scoreboard (Other side of the lobby)
-        const scoreObj = await new BS.GameObject({ name: "Scoreboard", parent: floor, localPosition: new BS.Vector3(12, 2, 0), localEulerAngles: new BS.Vector3(0, -90, 0) }).Async();
+        const scoreObj = await new BS.GameObject({ name: "Scoreboard", parent: floor, localPosition: new BS.Vector3(12, 2, 0), localEulerAngles: new BS.Vector3(0, 90, 0) }).Async();
         scoreboardText = await scoreObj.AddComponent(new BS.BanterText({
             text: "<b>SCOREBOARD</b>\n\nWaiting for data...",
             fontSize: 0.6,
@@ -162,6 +162,9 @@
 
         await createBtn("JoinBtn", -3, new BS.Vector4(0, 0.5, 1, 1), "JOIN GAME", () => {
             scene.TeleportTo(new BS.Vector3(0, GAME_HEIGHT + 2, 0), 0, true);
+            if (isHost() && gameState.status === "LOBBY") {
+                updateState({ status: "RESETTING", endTime: Date.now() + 5000 });
+            }
         });
 
         await createBtn("Timer5Btn", 0, new BS.Vector4(0.1, 0.8, 0.1, 1), "SET: 5S", () => {
@@ -174,12 +177,18 @@
             updateState({ initialCountdown: 10 });
         });
 
-        await createBtn("ResetBtn", 6, new BS.Vector4(0.5, 0.5, 0.5, 1), "RESET GAME", () => {
+        await createBtn("MuteBtn", 6, new BS.Vector4(0.5, 0.2, 0.8, 1), "MUTE AUDIO", async (e) => {
+            isMuted = !isMuted;
+            const btnObj = e.detail.object || await scene.Find("MuteBtn");
+            const txt = await btnObj.GetComponent(BS.CT.BanterText) || await scene.Find("MuteBtnText").GetComponent(BS.CT.BanterText);
+            if (txt) txt.text = isMuted ? "UNMUTE AUDIO" : "MUTE AUDIO";
+        });
+
+        await createBtn("ResetBtn", 9, new BS.Vector4(0.5, 0.5, 0.5, 1), "RESET GAME", () => {
             if (!isHost()) return;
             updateState({ status: "LOBBY", round: 0 });
         });
 
-        // Arena Tracker Trigger
         const arenaTracker = await new BS.GameObject({ name: "ArenaTracker", localPosition: new BS.Vector3(0, GAME_HEIGHT + 2, 0) }).Async();
         await arenaTracker.AddComponent(new BS.BoxCollider({ isTrigger: true, size: new BS.Vector3(GRID_SIZE * TILE_SIZE, 5, GRID_SIZE * TILE_SIZE) }));
         await arenaTracker.AddComponent(new BS.BanterColliderEvents());
@@ -187,6 +196,9 @@
             if (e.detail.user && e.detail.user.isLocal) {
                 console.log("Local player entered ARENA zone.");
                 isLocalInArena = true;
+                if (isHost() && gameState.status === "LOBBY") {
+                    updateState({ status: "RESETTING", endTime: Date.now() + 5000 });
+                }
             }
         });
         arenaTracker.On("trigger-exit", (e) => {
@@ -315,12 +327,7 @@
 
         const sorted = Object.values(players).sort((a, b) => b.falls - a.falls).slice(0, 10);
         if (sorted.length === 0) scoreStr += "No falls recorded yet!";
-        else {
-            sorted.forEach(p => {
-                scoreStr += `${p.name}: ${p.falls} falls\n`;
-            });
-        }
-
+        else sorted.forEach(p => scoreStr += `${p.name}: ${p.falls} falls\n`);
         scoreboardText.text = scoreStr;
     }
 
@@ -328,15 +335,9 @@
         const uid = scene.localUser.uid;
         const key = `cd_${type}:${uid}`;
         const nameKey = `cd_name:${uid}`;
-
         const current = parseInt(scene.spaceState.public[key] || "0");
         const props = { [key]: (current + 1).toString() };
-
-        // Also ensure name is saved for the leaderboard
-        if (!scene.spaceState.public[nameKey]) {
-            props[nameKey] = scene.localUser.name.replace(/<[^>]*>/g, '');
-        }
-
+        if (!scene.spaceState.public[nameKey]) props[nameKey] = scene.localUser.name.replace(/<[^>]*>/g, '');
         scene.SetPublicSpaceProps(props);
     }
 
@@ -353,7 +354,7 @@
             displayStr = remaining.toString();
             colorVisible = true;
             colorVec = COLORS[gameState.targetColorIndex].vec;
-            if (remaining <= 3 && remaining > 0 && remaining !== lastTick) {
+            if (!isMuted && remaining <= 3 && remaining > 0 && remaining !== lastTick) {
                 audio.tick.PlayOneShotFromUrl("https://audiofiles.firer.at/mp3/Tick.mp3");
                 lastTick = remaining;
             }
@@ -378,17 +379,12 @@
         if (now < gameState.endTime) return;
 
         if (gameState.status === "LOBBY") {
-            const initialSeed = Math.floor(Math.random() * 999999);
-            startNextRound(1, initialSeed);
+            // Wait for someone to join the game
         } else if (gameState.status === "SHOWING") {
             updateState({ status: "DROPPED", endTime: now + (TIMINGS.DROPPED * 1000) });
         } else if (gameState.status === "DROPPED") {
             const nextSeed = gameState.hardMode ? Math.floor(Math.random() * 999999) : gameState.seed;
-            updateState({
-                status: "RESETTING",
-                seed: nextSeed,
-                endTime: now + (TIMINGS.RESETTING * 1000)
-            });
+            updateState({ status: "RESETTING", seed: nextSeed, endTime: now + (TIMINGS.RESETTING * 1000) });
         } else if (gameState.status === "RESETTING") {
             startNextRound(gameState.round + 1, gameState.seed);
         }
@@ -397,7 +393,6 @@
     function startNextRound(roundNum, seed) {
         const speedScale = gameState.hardMode ? 0.6 : 0.35;
         const duration = Math.max(1.8, gameState.initialCountdown - (roundNum * speedScale));
-
         updateState({
             status: "SHOWING",
             round: roundNum,
@@ -412,9 +407,6 @@
         scene.SetPublicSpaceProps({ [STATE_KEY]: JSON.stringify(next) });
     }
 
-    if (window.BS) {
-        init();
-    } else {
-        window.addEventListener("bs-loaded", init);
-    }
+    if (window.BS) init();
+    else window.addEventListener("bs-loaded", init);
 })();
