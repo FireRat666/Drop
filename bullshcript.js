@@ -59,6 +59,7 @@
         scene = BS.BanterScene.GetInstance();
         setupSettings();
 
+        // Wait for Unity to be fully loaded before doing anything
         if (!scene.unityLoaded) {
             await new Promise(resolve => {
                 scene.On("unity-loaded", resolve);
@@ -89,10 +90,9 @@
         settings.SpawnPoint = new BS.Vector4(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z, 180);
 
         scene.SetSettings(settings);
-        // Instant teleport for local user on load to ensure they are in lobby
         scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 180, true);
 
-        // Re-apply after a delay as per user request to be sure
+        // Re-apply after a delay to ensure it sticks
         setTimeout(() => {
             scene.SetSettings(settings);
             scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 180, true);
@@ -111,7 +111,7 @@
         // Buttons Container
         const buttonGroup = new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(0, 1, -10) });
 
-        // helper for buttons
+        // helper for buttons - add text component directly to the button object
         const createBtn = async (name, xPos, color, text, handler) => {
             const btn = new BS.GameObject({ name: name, parent: buttonGroup, localPosition: new BS.Vector3(xPos, 0, 0) });
             await btn.AddComponent(new BS.BanterBox({ width: 2, height: 0.6, depth: 1 }));
@@ -119,8 +119,15 @@
             await btn.AddComponent(new BS.BanterMaterial({ color: color }));
             btn.SetLayer(5);
 
-            const t = new BS.GameObject({ name: "Txt", parent: btn, localPosition: new BS.Vector3(0, 0.4, 0), localEulerAngles: new BS.Vector3(90, 0, 0) });
-            await t.AddComponent(new BS.BanterText({ text: text, fontSize: 0.3, color: new BS.Vector4(1, 1, 1, 1), horizontalAlignment: BS.HorizontalAlignment.Center }));
+            // Adding text component directly to the button object
+            await btn.AddComponent(new BS.BanterText({
+                text: text,
+                fontSize: 0.3,
+                color: new BS.Vector4(1, 1, 1, 1),
+                horizontalAlignment: BS.HorizontalAlignment.Center,
+                verticalAlignment: BS.VerticalAlignment.Middle
+            }));
+
             btn.On("click", handler);
             return btn;
         };
@@ -230,17 +237,17 @@
         sync();
     }
 
-    function sync() {
+    async function sync() {
         const raw = scene.spaceState.public[STATE_KEY];
         if (!raw) return;
         gameState = JSON.parse(raw);
         updateVisuals();
 
         // Update Button Labels in Lobby
-        const hardBtn = scene.Find("HardModeBtn");
+        const hardBtn = await scene.Find("HardModeBtn");
         if (hardBtn) {
-            const txt = hardBtn.Find("Txt").GetComponent(BS.CT.BanterText);
-            txt.text = `HARD MODE: ${gameState.hardMode ? "ON" : "OFF"}`;
+            const txt = await hardBtn.GetComponent(BS.CT.BanterText);
+            if (txt) txt.text = `HARD MODE: ${gameState.hardMode ? "ON" : "OFF"}`;
         }
     }
 
@@ -294,8 +301,7 @@
         } else if (gameState.status === "SHOWING") {
             updateState({ status: "DROPPED", endTime: now + (TIMINGS.DROPPED * 1000) });
         } else if (gameState.status === "DROPPED") {
-            // Logic change: In normal mode, seed stays the same for 1 round to keep board static.
-            // In hard mode, we generate a new seed here to change board immediately.
+            // Logic change: board reshuffles immediately if hard mode is on
             const nextSeed = gameState.hardMode ? Math.floor(Math.random() * 999999) : gameState.seed;
             updateState({
                 status: "RESETTING",
@@ -308,11 +314,9 @@
     }
 
     function startNextRound(roundNum) {
-        // Hard mode makes the countdown even faster
         const speedScale = gameState.hardMode ? 0.6 : 0.35;
         const duration = Math.max(1.8, gameState.initialCountdown - (roundNum * speedScale));
 
-        // Always generate new seed for the next round's "Showing" phase
         updateState({
             status: "SHOWING",
             round: roundNum,
