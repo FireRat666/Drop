@@ -19,9 +19,9 @@
 
     const TIMINGS = {
         LOBBY: 10,
-        SHOWING: 6,
+        SHOWING: 10, // Initial countdown
         DROPPED: 3,
-        RESETTING: 4
+        RESETTING: 3
     };
 
     // --- State Variables ---
@@ -35,8 +35,8 @@
 
     let tiles = [];
     let ui = {
+        root: null,
         countdown: null,
-        targetColorObj: null,
         targetColorMat: null,
         statusLabel: null
     };
@@ -97,9 +97,23 @@
         const root = new BS.GameObject({ name: "Environment" });
 
         const floor = new BS.GameObject({ name: "SpectatorFloor", parent: root });
-        await floor.AddComponent(new BS.BanterBox({ width: 40, height: 0.5, depth: 40 }));
-        await floor.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(40, 0.5, 40) }));
+        await floor.AddComponent(new BS.BanterBox({ width: 60, height: 0.5, depth: 60 }));
+        await floor.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(60, 0.5, 60) }));
         await floor.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.15, 0.15, 0.15, 1) }));
+
+        // Spectator stands (visual only)
+        for (let i = 0; i < 4; i++) {
+            const angle = (i * 90) * (Math.PI / 180);
+            const dist = 25;
+            const stand = new BS.GameObject({
+                name: "Stand",
+                parent: root,
+                localPosition: new BS.Vector3(Math.sin(angle) * dist, 2, Math.cos(angle) * dist),
+                localEulerAngles: new BS.Vector3(0, i * 90, 0)
+            });
+            await stand.AddComponent(new BS.BanterBox({ width: 20, height: 4, depth: 2 }));
+            await stand.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.2, 0.2, 0.2, 1) }));
+        }
 
         const pillarPos = [{ x: -15, z: -15 }, { x: 15, z: -15 }, { x: -15, z: 15 }, { x: 15, z: 15 }];
         const pillarRoot = new BS.GameObject({ name: "Pillars", parent: root });
@@ -107,11 +121,6 @@
             const pillar = new BS.GameObject({ name: "Pillar", parent: pillarRoot, localPosition: new BS.Vector3(p.x, GAME_HEIGHT / 2, p.z) });
             await pillar.AddComponent(new BS.BanterCylinder({ radiusTop: 1, radiusBottom: 1, height: GAME_HEIGHT }));
             await pillar.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.4, 0.4, 0.4, 1) }));
-        }
-
-        const ao = await pillarRoot.AddComponent(new BS.BanterAOBaking({ subdivisionLevel: 1, sampleCount: 64 }));
-        if (ao && typeof ao.BakeAO === 'function') {
-            ao.BakeAO();
         }
 
         const btn = new BS.GameObject({ name: "JoinButton", localPosition: new BS.Vector3(0, 1, 10) });
@@ -125,7 +134,7 @@
         btn.On("click", () => scene.TeleportTo(new BS.Vector3(0, GAME_HEIGHT + 2, 0), 0, true));
 
         const deadZone = new BS.GameObject({ name: "DeadZone", localPosition: new BS.Vector3(0, 2, 0) });
-        await deadZone.AddComponent(new BS.BoxCollider({ isTrigger: true, size: new BS.Vector3(60, 2, 60) }));
+        await deadZone.AddComponent(new BS.BoxCollider({ isTrigger: true, size: new BS.Vector3(80, 2, 80) }));
         await deadZone.AddComponent(new BS.BanterColliderEvents());
         deadZone.On("trigger-enter", () => scene.TeleportTo(new BS.Vector3(0, 0.5, 15), 180, true));
     }
@@ -144,29 +153,49 @@
                 });
                 await tile.AddComponent(new BS.BanterBox({ width: TILE_SIZE - 0.1, height: 0.4, depth: TILE_SIZE - 0.1 }));
                 await tile.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(TILE_SIZE - 0.1, 0.4, TILE_SIZE - 0.1) }));
-
-                // Use positional arguments with cacheBust (the 6th argument) to ensure unique material instances per tile
                 const mat = await tile.AddComponent(new BS.BanterMaterial("Unlit/Diffuse", "", new BS.Vector4(1, 1, 1, 1), BS.MaterialSide.Front, false, tileName));
-
                 tiles.push({ obj: tile, mat: mat, x: x, z: z });
             }
         }
     }
 
     async function setupUI() {
-        const uiRoot = new BS.GameObject({ name: "GameUI", localPosition: new BS.Vector3(0, GAME_HEIGHT + 6, 0) });
-        ui.targetColorObj = new BS.GameObject({ name: "TargetIndicator", parent: uiRoot, localPosition: new BS.Vector3(0, 3, 0) });
-        await ui.targetColorObj.AddComponent(new BS.BanterBox({ width: 2, height: 2, depth: 2 }));
-        ui.targetColorMat = await ui.targetColorObj.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(1,1,1,1) }));
-        await ui.targetColorObj.AddComponent(new BS.BanterBillboard({ enableYAxis: true }));
+        // Position UI higher and in multiple directions for better visibility
+        const uiAnchor = new BS.GameObject({ name: "UIAnchor", localPosition: new BS.Vector3(0, GAME_HEIGHT + 10, 0) });
+        ui.root = uiAnchor;
 
-        const countObj = new BS.GameObject({ name: "Countdown", parent: uiRoot, localPosition: new BS.Vector3(0, 0, 0) });
-        ui.countdown = await countObj.AddComponent(new BS.BanterText({ text: "WAITING", fontSize: 4, color: new BS.Vector4(1, 1, 1, 1) }));
-        await countObj.AddComponent(new BS.BanterBillboard({ enableYAxis: true }));
+        const createDisplay = async (name, pos, rot) => {
+            const panel = new BS.GameObject({ name: name, parent: uiAnchor, localPosition: pos, localEulerAngles: rot });
 
-        const statusObj = new BS.GameObject({ name: "Status", parent: uiRoot, localPosition: new BS.Vector3(0, -2, 0) });
-        ui.statusLabel = await statusObj.AddComponent(new BS.BanterText({ text: "Welcome", fontSize: 1, color: new BS.Vector4(1, 0.8, 0, 1) }));
-        await statusObj.AddComponent(new BS.BanterBillboard({ enableYAxis: true }));
+            // Text Label
+            const textObj = new BS.GameObject({ name: "Label", parent: panel, localPosition: new BS.Vector3(0, 2, 0) });
+            const textComp = await textObj.AddComponent(new BS.BanterText({ text: "GET READY", fontSize: 10, color: new BS.Vector4(1, 1, 1, 1), horizontalAlignment: BS.HorizontalAlignment.Center }));
+
+            // Color Indicator Cube (Larger and positioned next to text)
+            const cube = new BS.GameObject({ name: "ColorCube", parent: panel, localPosition: new BS.Vector3(0, -2, 0) });
+            await cube.AddComponent(new BS.BanterBox({ width: 3, height: 3, depth: 3 }));
+            const mat = await cube.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(1, 1, 1, 1) }));
+
+            return { text: textComp, mat: mat, obj: panel };
+        };
+
+        // Create 4 displays facing outwards
+        const displays = [
+            await createDisplay("DisplayN", new BS.Vector3(0, 0, 10), new BS.Vector3(0, 0, 0)),
+            await createDisplay("DisplayS", new BS.Vector3(0, 0, -10), new BS.Vector3(0, 180, 0)),
+            await createDisplay("DisplayE", new BS.Vector3(10, 0, 0), new BS.Vector3(0, 90, 0)),
+            await createDisplay("DisplayW", new BS.Vector3(-10, 0, 0), new BS.Vector3(0, -90, 0))
+        ];
+
+        // Store references (we only need to update the first one since we'll proxy the values or just update all)
+        ui.update = (countdown, colorVec, statusText, colorVisible) => {
+            displays.forEach(d => {
+                d.text.text = countdown;
+                d.mat.color = colorVec;
+                d.obj.SetActive(true); // Always active for now
+                d.mat.gameObject.SetActive(colorVisible);
+            });
+        };
     }
 
     async function setupAudio() {
@@ -194,17 +223,6 @@
             tile.mat.color = COLORS[colorIdx].vec;
             tile.obj.SetActive(gameState.status !== "DROPPED" || colorIdx === gameState.targetColorIndex);
         });
-
-        if (gameState.status === "SHOWING") {
-            ui.targetColorObj.SetActive(true);
-            ui.targetColorMat.color = COLORS[gameState.targetColorIndex].vec;
-            ui.statusLabel.text = `Stand on ${COLORS[gameState.targetColorIndex].name.toUpperCase()}!`;
-        } else {
-            ui.targetColorObj.SetActive(gameState.status === "DROPPED");
-            if (gameState.status === "LOBBY") ui.statusLabel.text = "Waiting for game...";
-            if (gameState.status === "DROPPED") ui.statusLabel.text = "Watch out!";
-            if (gameState.status === "RESETTING") ui.statusLabel.text = "Get Ready...";
-        }
     }
 
     let lastTick = 0;
@@ -212,34 +230,56 @@
         const now = Date.now();
         const remaining = Math.max(0, Math.ceil((gameState.endTime - now) / 1000));
 
+        let displayStr = "";
+        let colorVisible = false;
+        let colorVec = new BS.Vector4(1, 1, 1, 1);
+
         if (gameState.status === "SHOWING") {
-            ui.countdown.text = remaining.toString();
+            displayStr = remaining.toString();
+            colorVisible = true;
+            colorVec = COLORS[gameState.targetColorIndex].vec;
             if (remaining <= 3 && remaining > 0 && remaining !== lastTick) {
                 audio.tick.PlayOneShotFromUrl("https://firer.at/files/tick.mp3");
                 lastTick = remaining;
             }
-        } else if (gameState.status === "LOBBY") ui.countdown.text = "COLOUR DROP";
-        else if (gameState.status === "DROPPED") ui.countdown.text = "!!!";
-        else ui.countdown.text = "WAIT";
+        } else if (gameState.status === "LOBBY") {
+            displayStr = "COLOUR DROP";
+        } else if (gameState.status === "DROPPED") {
+            displayStr = "!!!";
+        } else {
+            displayStr = "WAIT";
+        }
+
+        if (ui.update) {
+            ui.update(displayStr, colorVec, "", colorVisible);
+        }
 
         if (isHost()) driveHostLogic(now);
     }
 
     function driveHostLogic(now) {
         if (now < gameState.endTime) return;
-        if (gameState.status === "LOBBY") startNextRound(1);
-        else if (gameState.status === "SHOWING") updateState({ status: "DROPPED", endTime: now + (TIMINGS.DROPPED * 1000) });
-        else if (gameState.status === "DROPPED") updateState({ status: "RESETTING", endTime: now + (TIMINGS.RESETTING * 1000) });
-        else if (gameState.status === "RESETTING") startNextRound(gameState.round + 1);
+
+        if (gameState.status === "LOBBY") {
+            startNextRound(1);
+        } else if (gameState.status === "SHOWING") {
+            updateState({ status: "DROPPED", endTime: now + (TIMINGS.DROPPED * 1000) });
+        } else if (gameState.status === "DROPPED") {
+            updateState({ status: "RESETTING", endTime: now + (TIMINGS.RESETTING * 1000) });
+        } else if (gameState.status === "RESETTING") {
+            startNextRound(gameState.round + 1);
+        }
     }
 
     function startNextRound(roundNum) {
+        // Slow start, gets faster over rounds
+        const duration = Math.max(1.8, TIMINGS.SHOWING - (roundNum * 0.35));
         updateState({
             status: "SHOWING",
             round: roundNum,
             seed: Math.floor(Math.random() * 999999),
             targetColorIndex: Math.floor(Math.random() * COLORS.length),
-            endTime: Date.now() + (Math.max(1.5, TIMINGS.SHOWING - (roundNum * 0.4)) * 1000)
+            endTime: Date.now() + (duration * 1000)
         });
     }
 
