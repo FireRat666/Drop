@@ -44,8 +44,12 @@
     let audio = { tick: null };
     let isLocalInArena = false; // Internal tracking using colliders
     let isMuted = false;
-    let scoreboardText = null;
     let lastFallTime = 0; // Debounce tracker for falls
+
+    // Leaders
+    let scoreboardFalls = null;
+    let scoreboardNormal = null;
+    let scoreboardHard = null;
 
     // Local player game session tracking
     let gameStartTime = 0; // Tracks when local player joined the game arena
@@ -131,14 +135,22 @@
             horizontalAlignment: BS.HorizontalAlignment.Left
         }));
 
-        // Scoreboard (Other side of the lobby)
-        const scoreObj = await new BS.GameObject({ name: "Scoreboard", parent: floor, localPosition: new BS.Vector3(12, 2, 0), localEulerAngles: new BS.Vector3(0, 90, 0) }).Async();
-        scoreboardText = await scoreObj.AddComponent(new BS.BanterText({
-            text: "<b>SCOREBOARD</b>\n\nWaiting for data...",
-            fontSize: 0.6,
-            color: new BS.Vector4(1, 1, 1, 1),
-            horizontalAlignment: BS.HorizontalAlignment.Center
-        }));
+        // Scoreboard (Other side of the lobby - Split into 3 columns)
+        const boardRoot = await new BS.GameObject({ name: "Scoreboards", parent: floor, localPosition: new BS.Vector3(12, 3, 0), localEulerAngles: new BS.Vector3(0, 90, 0) }).Async();
+
+        const createBoard = async (name, x, label) => {
+            const obj = await new BS.GameObject({ name: name, parent: boardRoot, localPosition: new BS.Vector3(0, 0, x) }).Async();
+            return await obj.AddComponent(new BS.BanterText({
+                text: `<b>${label}</b>\n\nWaiting...`,
+                fontSize: 0.5,
+                color: new BS.Vector4(1, 1, 1, 1),
+                horizontalAlignment: BS.HorizontalAlignment.Center
+            }));
+        };
+
+        scoreboardFalls = await createBoard("FallsBoard", -6, "MOST FALLS");
+        scoreboardNormal = await createBoard("NormalBoard", 0, "NORMAL SURVIVAL");
+        scoreboardHard = await createBoard("HardBoard", 6, "HARD SURVIVAL");
 
         // Buttons Container
         const buttonGroup = await new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(0, 1, 0) }).Async();
@@ -171,8 +183,8 @@
         await createBtn("JoinBtn", -3, new BS.Vector4(0, 0.5, 1, 1), "JOIN GAME", () => {
             console.log("Join Game button clicked. Teleporting to arena.");
             scene.TeleportTo(new BS.Vector3(0, GAME_HEIGHT + 2, 0), 0, true);
-            gameStartTime = Date.now(); // Start tracking survival time
-            gameModeAtStart = gameState.hardMode; // Record mode at start
+            gameStartTime = Date.now();
+            gameModeAtStart = gameState.hardMode;
             console.log(`Survival timer started. Mode: ${gameModeAtStart ? 'Hard' : 'Normal'}`);
 
             if (isHost() && gameState.status === "LOBBY") {
@@ -235,7 +247,6 @@
                     lastFallTime = now;
                     console.log("Local player fell! Processing score and teleporting to lobby.");
 
-                    // Unified user stats update
                     updateUserStats(gameStartTime > 0 ? now - gameStartTime : 0, gameModeAtStart);
                     gameStartTime = 0; // Reset for next session
 
@@ -325,36 +336,31 @@
     }
 
     function updateScoreboard() {
-        if (!scoreboardText) return;
+        if (!scoreboardFalls || !scoreboardNormal || !scoreboardHard) return;
 
-        let scoreStr = "<b>SCOREBOARD</b>\n\n";
         const state = scene.spaceState.public;
         const players = [];
 
         Object.keys(state).forEach(key => {
             if (key.startsWith(USER_DATA_KEY_PREFIX)) {
-                try {
-                    players.push(JSON.parse(state[key]));
-                } catch (e) { console.error("Error parsing user stats:", e); }
+                try { players.push(JSON.parse(state[key])); } catch (e) { }
             }
         });
 
-        scoreStr += "<size=1.2><b>Falls:</b></size>\n";
-        const sortedByFalls = [...players].sort((a, b) => b.falls - a.falls).slice(0, 5);
-        if (sortedByFalls.length === 0) scoreStr += "No falls yet!\n";
-        else sortedByFalls.forEach(p => scoreStr += `${p.name}: ${p.falls}\n`);
+        const updateBoard = (comp, title, sorted, formatter) => {
+            let str = `<size=1.2><b>${title}</b></size>\n\n`;
+            if (sorted.length === 0) str += "No records yet!";
+            else sorted.forEach((p, i) => str += `${i+1}. ${p.name}: ${formatter(p)}\n`);
+            comp.text = str;
+        };
 
-        scoreStr += "\n<size=1.2><b>Best Normal Survival:</b></size>\n";
-        const sortedByNormal = [...players].filter(p => p.bestNormal > 0).sort((a, b) => b.bestNormal - a.bestNormal).slice(0, 5);
-        if (sortedByNormal.length === 0) scoreStr += "No scores yet!\n";
-        else sortedByNormal.forEach(p => scoreStr += `${p.name}: ${(p.bestNormal / 1000).toFixed(1)}s\n`);
+        const topFalls = [...players].sort((a, b) => b.falls - a.falls).slice(0, 10);
+        const topNormal = [...players].filter(p => p.bestNormal > 0).sort((a, b) => b.bestNormal - a.bestNormal).slice(0, 10);
+        const topHard = [...players].filter(p => p.bestHard > 0).sort((a, b) => b.bestHard - a.bestHard).slice(0, 10);
 
-        scoreStr += "\n<size=1.2><b>Best Hard Survival:</b></size>\n";
-        const sortedByHard = [...players].filter(p => p.bestHard > 0).sort((a, b) => b.bestHard - a.bestHard).slice(0, 5);
-        if (sortedByHard.length === 0) scoreStr += "No scores yet!\n";
-        else sortedByHard.forEach(p => scoreStr += `${p.name}: ${(p.bestHard / 1000).toFixed(1)}s\n`);
-
-        scoreboardText.text = scoreStr;
+        updateBoard(scoreboardFalls, "MOST FALLS", topFalls, p => p.falls);
+        updateBoard(scoreboardNormal, "BEST NORMAL", topNormal, p => (p.bestNormal / 1000).toFixed(1) + "s");
+        updateBoard(scoreboardHard, "BEST HARD", topHard, p => (p.bestHard / 1000).toFixed(1) + "s");
     }
 
     function updateUserStats(survivalTime, modeAtStart) {
@@ -371,28 +377,17 @@
         };
 
         if (currentDataRaw) {
-            try {
-                stats = JSON.parse(currentDataRaw);
-            } catch (e) { console.error("Error parsing current user stats:", e); }
+            try { stats = JSON.parse(currentDataRaw); } catch (e) { }
         }
 
-        // Increment falls
         stats.falls++;
-        // Update name in case it changed
         stats.name = scene.localUser.name.replace(/<[^>]*>/g, '');
 
-        // Update personal bests if applicable
         if (survivalTime > 0) {
             if (modeAtStart) {
-                if (survivalTime > stats.bestHard) {
-                    console.log(`New Hard Mode PB: ${(survivalTime/1000).toFixed(1)}s`);
-                    stats.bestHard = survivalTime;
-                }
+                if (survivalTime > stats.bestHard) stats.bestHard = survivalTime;
             } else {
-                if (survivalTime > stats.bestNormal) {
-                    console.log(`New Normal Mode PB: ${(survivalTime/1000).toFixed(1)}s`);
-                    stats.bestNormal = survivalTime;
-                }
+                if (survivalTime > stats.bestNormal) stats.bestNormal = survivalTime;
             }
         }
 
@@ -437,7 +432,7 @@
         if (now < gameState.endTime) return;
 
         if (gameState.status === "LOBBY") {
-            // Wait for someone to join
+            // Wait
         } else if (gameState.status === "SHOWING") {
             updateState({ status: "DROPPED", endTime: now + (TIMINGS.DROPPED * 1000) });
         } else if (gameState.status === "DROPPED") {
