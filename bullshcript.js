@@ -124,7 +124,7 @@
         const floor = await new BS.GameObject({ name: "SpectatorLobby", parent: root, localPosition: new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y - 0.05, LOBBY_POS_RAW.z) }).Async();
         await floor.AddComponent(new BS.BanterBox({ width: 30, height: 0.5, depth: 30 }));
         await floor.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(30, 0.5, 30) }));
-        await floor.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.1, 0.1, 0.1, 1) }));
+        await floor.AddComponent(new BS.BanterMaterial({ shaderName: "Standard", color: new BS.Vector4(0.1, 0.1, 0.1, 1) }));
 
         // Rules Text (One side of the lobby)
         const rulesObj = await new BS.GameObject({ name: "RulesText", parent: floor, localPosition: new BS.Vector3(-12, 2, 0), localEulerAngles: new BS.Vector3(0, -90, 0) }).Async();
@@ -159,7 +159,7 @@
             const btn = await new BS.GameObject({ name: name, parent: buttonGroup, localPosition: new BS.Vector3(xPos, 0, 0) }).Async();
             await btn.AddComponent(new BS.BanterBox({ width: 1, height: 0.4, depth: 0.5 }));
             await btn.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(1, 0.4, 0.5) }));
-            await btn.AddComponent(new BS.BanterMaterial({ color: color }));
+            await btn.AddComponent(new BS.BanterMaterial({ shaderName: "Standard", color: color }));
             btn.SetLayer(5);
 
             const t = await new BS.GameObject({ name: name + "Text", parent: btn, localPosition: new BS.Vector3(0, 0.5, 0), localEulerAngles: new BS.Vector3(0, 0, 0) }).Async();
@@ -288,7 +288,7 @@
             const textComp = await textObj.AddComponent(new BS.BanterText({ text: "DROP GAME", fontSize: 12, color: new BS.Vector4(1, 1, 1, 1), horizontalAlignment: BS.HorizontalAlignment.Center }));
             const cube = await new BS.GameObject({ name: "ColorCube", parent: panel, localPosition: new BS.Vector3(0, -1, 0) }).Async();
             await cube.AddComponent(new BS.BanterBox({ width: 5, height: 5, depth: 5 }));
-            const mat = await cube.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(1, 1, 1, 1) }));
+            const mat = await cube.AddComponent(new BS.BanterMaterial({ shaderName: "Standard", color: new BS.Vector4(1, 1, 1, 1) }));
             return { text: textComp, mat: mat, cube: cube };
         };
 
