@@ -19,9 +19,9 @@
 
     const TIMINGS = {
         LOBBY: 10,
-        SHOWING: 5,
+        SHOWING: 6,
         DROPPED: 3,
-        RESETTING: 2
+        RESETTING: 4
     };
 
     // --- State Variables ---
@@ -62,18 +62,15 @@
         if (scene) return;
         scene = BS.BanterScene.GetInstance();
 
-        // Wait for Unity to be fully loaded
         if (!scene.unityLoaded) {
             console.log("Colour Drop: Waiting for Unity...");
             await new Promise(resolve => {
                 scene.On("unity-loaded", resolve);
-                // Fallback for window event
                 window.addEventListener("unity-loaded", resolve, { once: true });
             });
         }
         console.log("Colour Drop: Unity Loaded!");
 
-        // Convert COLORS to BS.Vector4 now that BS is available
         COLORS = COLORS.map(c => ({ ...c, vec: new BS.Vector4(c.vec[0], c.vec[1], c.vec[2], c.vec[3]) }));
 
         setupSettings();
@@ -139,14 +136,18 @@
 
         for (let x = 0; x < GRID_SIZE; x++) {
             for (let z = 0; z < GRID_SIZE; z++) {
+                const tileName = `Tile_${x}_${z}`;
                 const tile = new BS.GameObject({
-                    name: `Tile_${x}_${z}`,
+                    name: tileName,
                     parent: gridRoot,
                     localPosition: new BS.Vector3(x * TILE_SIZE - offset, 0, z * TILE_SIZE - offset)
                 });
                 await tile.AddComponent(new BS.BanterBox({ width: TILE_SIZE - 0.1, height: 0.4, depth: TILE_SIZE - 0.1 }));
                 await tile.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(TILE_SIZE - 0.1, 0.4, TILE_SIZE - 0.1) }));
-                const mat = await tile.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(1, 1, 1, 1) }));
+
+                // Use positional arguments with cacheBust (the 6th argument) to ensure unique material instances per tile
+                const mat = await tile.AddComponent(new BS.BanterMaterial("Unlit/Diffuse", "", new BS.Vector4(1, 1, 1, 1), BS.MaterialSide.Front, false, tileName));
+
                 tiles.push({ obj: tile, mat: mat, x: x, z: z });
             }
         }
