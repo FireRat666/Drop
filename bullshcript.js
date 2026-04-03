@@ -6,7 +6,7 @@
     const GRID_SIZE = 8;
     const TILE_SIZE = 3;
     const GAME_HEIGHT = 15;
-    let COLORS = [ // Will be converted to BS.Vector4 later
+    let COLORS = [
         { name: "Red", vec: [1, 0.1, 0.1, 1] },
         { name: "Green", vec: [0.1, 1, 0.1, 1] },
         { name: "Blue", vec: [0.1, 0.1, 1, 1] },
@@ -42,9 +42,7 @@
     };
 
     let audio = {
-        tick: null,
-        fall: null,
-        win: null
+        tick: null
     };
 
     // --- Utils ---
@@ -54,7 +52,6 @@
     };
 
     const isHost = () => {
-        // Ensure scene and localUser are defined before accessing
         if (!scene || !scene.localUser || !scene.users) return false;
         const uids = Object.keys(scene.users).sort();
         return uids.length > 0 && uids[0] === scene.localUser.uid;
@@ -62,8 +59,19 @@
 
     // --- Initialization ---
     async function init() {
-        console.log("Colour Drop: Starting Init");
+        if (scene) return;
         scene = BS.BanterScene.GetInstance();
+
+        // Wait for Unity to be fully loaded
+        if (!scene.unityLoaded) {
+            console.log("Colour Drop: Waiting for Unity...");
+            await new Promise(resolve => {
+                scene.On("unity-loaded", resolve);
+                // Fallback for window event
+                window.addEventListener("unity-loaded", resolve, { once: true });
+            });
+        }
+        console.log("Colour Drop: Unity Loaded!");
 
         // Convert COLORS to BS.Vector4 now that BS is available
         COLORS = COLORS.map(c => ({ ...c, vec: new BS.Vector4(c.vec[0], c.vec[1], c.vec[2], c.vec[3]) }));
@@ -92,34 +100,36 @@
         const root = new BS.GameObject({ name: "Environment" });
 
         const floor = new BS.GameObject({ name: "SpectatorFloor", parent: root });
-        floor.AddComponent(new BS.BanterBox({ width: 40, height: 0.5, depth: 40 }));
-        floor.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(40, 0.5, 40) }));
-        floor.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.15, 0.15, 0.15, 1) }));
+        await floor.AddComponent(new BS.BanterBox({ width: 40, height: 0.5, depth: 40 }));
+        await floor.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(40, 0.5, 40) }));
+        await floor.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.15, 0.15, 0.15, 1) }));
 
         const pillarPos = [{ x: -15, z: -15 }, { x: 15, z: -15 }, { x: -15, z: 15 }, { x: 15, z: 15 }];
         const pillarRoot = new BS.GameObject({ name: "Pillars", parent: root });
-        pillarPos.forEach(p => {
+        for (const p of pillarPos) {
             const pillar = new BS.GameObject({ name: "Pillar", parent: pillarRoot, localPosition: new BS.Vector3(p.x, GAME_HEIGHT / 2, p.z) });
-            pillar.AddComponent(new BS.BanterCylinder({ radiusTop: 1, radiusBottom: 1, height: GAME_HEIGHT }));
-            pillar.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.4, 0.4, 0.4, 1) }));
-        });
+            await pillar.AddComponent(new BS.BanterCylinder({ radiusTop: 1, radiusBottom: 1, height: GAME_HEIGHT }));
+            await pillar.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.4, 0.4, 0.4, 1) }));
+        }
 
-        const ao = pillarRoot.AddComponent(new BS.BanterAOBaking({ subdivisionLevel: 1, sampleCount: 64 }));
-        ao.BakeAO();
+        const ao = await pillarRoot.AddComponent(new BS.BanterAOBaking({ subdivisionLevel: 1, sampleCount: 64 }));
+        if (ao && typeof ao.BakeAO === 'function') {
+            ao.BakeAO();
+        }
 
         const btn = new BS.GameObject({ name: "JoinButton", localPosition: new BS.Vector3(0, 1, 10) });
-        btn.AddComponent(new BS.BanterBox({ width: 2, height: 0.6, depth: 1 }));
-        btn.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(2, 0.6, 1) }));
-        btn.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0, 0.6, 1, 1) }));
+        await btn.AddComponent(new BS.BanterBox({ width: 2, height: 0.6, depth: 1 }));
+        await btn.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(2, 0.6, 1) }));
+        await btn.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0, 0.6, 1, 1) }));
         btn.SetLayer(5);
 
         const btnText = new BS.GameObject({ name: "BtnText", parent: btn, localPosition: new BS.Vector3(0, 0.4, 0), localEulerAngles: new BS.Vector3(90, 0, 0) });
-        btnText.AddComponent(new BS.BanterText({ text: "JOIN GAME", fontSize: 0.4, color: new BS.Vector4(1, 1, 1, 1) }));
+        await btnText.AddComponent(new BS.BanterText({ text: "JOIN GAME", fontSize: 0.4, color: new BS.Vector4(1, 1, 1, 1) }));
         btn.On("click", () => scene.TeleportTo(new BS.Vector3(0, GAME_HEIGHT + 2, 0), 0, true));
 
         const deadZone = new BS.GameObject({ name: "DeadZone", localPosition: new BS.Vector3(0, 2, 0) });
-        deadZone.AddComponent(new BS.BoxCollider({ isTrigger: true, size: new BS.Vector3(60, 2, 60) }));
-        deadZone.AddComponent(new BS.BanterColliderEvents());
+        await deadZone.AddComponent(new BS.BoxCollider({ isTrigger: true, size: new BS.Vector3(60, 2, 60) }));
+        await deadZone.AddComponent(new BS.BanterColliderEvents());
         deadZone.On("trigger-enter", () => scene.TeleportTo(new BS.Vector3(0, 0.5, 15), 180, true));
     }
 
@@ -134,9 +144,9 @@
                     parent: gridRoot,
                     localPosition: new BS.Vector3(x * TILE_SIZE - offset, 0, z * TILE_SIZE - offset)
                 });
-                tile.AddComponent(new BS.BanterBox({ width: TILE_SIZE - 0.1, height: 0.4, depth: TILE_SIZE - 0.1 }));
-                tile.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(TILE_SIZE - 0.1, 0.4, TILE_SIZE - 0.1) }));
-                const mat = tile.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(1, 1, 1, 1) }));
+                await tile.AddComponent(new BS.BanterBox({ width: TILE_SIZE - 0.1, height: 0.4, depth: TILE_SIZE - 0.1 }));
+                await tile.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(TILE_SIZE - 0.1, 0.4, TILE_SIZE - 0.1) }));
+                const mat = await tile.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(1, 1, 1, 1) }));
                 tiles.push({ obj: tile, mat: mat, x: x, z: z });
             }
         }
@@ -145,22 +155,22 @@
     async function setupUI() {
         const uiRoot = new BS.GameObject({ name: "GameUI", localPosition: new BS.Vector3(0, GAME_HEIGHT + 6, 0) });
         ui.targetColorObj = new BS.GameObject({ name: "TargetIndicator", parent: uiRoot, localPosition: new BS.Vector3(0, 3, 0) });
-        ui.targetColorObj.AddComponent(new BS.BanterBox({ width: 2, height: 2, depth: 2 }));
-        ui.targetColorMat = ui.targetColorObj.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(1,1,1,1) }));
-        ui.targetColorObj.AddComponent(new BS.BanterBillboard({ enableYAxis: true }));
+        await ui.targetColorObj.AddComponent(new BS.BanterBox({ width: 2, height: 2, depth: 2 }));
+        ui.targetColorMat = await ui.targetColorObj.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(1,1,1,1) }));
+        await ui.targetColorObj.AddComponent(new BS.BanterBillboard({ enableYAxis: true }));
 
         const countObj = new BS.GameObject({ name: "Countdown", parent: uiRoot, localPosition: new BS.Vector3(0, 0, 0) });
-        ui.countdown = countObj.AddComponent(new BS.BanterText({ text: "WAITING", fontSize: 4, color: new BS.Vector4(1, 1, 1, 1) }));
-        countObj.AddComponent(new BS.BanterBillboard({ enableYAxis: true }));
+        ui.countdown = await countObj.AddComponent(new BS.BanterText({ text: "WAITING", fontSize: 4, color: new BS.Vector4(1, 1, 1, 1) }));
+        await countObj.AddComponent(new BS.BanterBillboard({ enableYAxis: true }));
 
         const statusObj = new BS.GameObject({ name: "Status", parent: uiRoot, localPosition: new BS.Vector3(0, -2, 0) });
-        ui.statusLabel = statusObj.AddComponent(new BS.BanterText({ text: "Welcome", fontSize: 1, color: new BS.Vector4(1, 0.8, 0, 1) }));
-        statusObj.AddComponent(new BS.BanterBillboard({ enableYAxis: true }));
+        ui.statusLabel = await statusObj.AddComponent(new BS.BanterText({ text: "Welcome", fontSize: 1, color: new BS.Vector4(1, 0.8, 0, 1) }));
+        await statusObj.AddComponent(new BS.BanterBillboard({ enableYAxis: true }));
     }
 
     async function setupAudio() {
         const audioRoot = new BS.GameObject({ name: "Audio" });
-        audio.tick = audioRoot.AddComponent(new BS.BanterAudioSource({ volume: 0.5, loop: false, playOnAwake: false }));
+        audio.tick = await audioRoot.AddComponent(new BS.BanterAudioSource({ volume: 0.5, loop: false, playOnAwake: false }));
     }
 
     function setupNetworking() {
@@ -238,5 +248,9 @@
     }
 
     // --- Entry Point ---
-    window.addEventListener("bs-loaded", init);
+    if (window.BS) {
+        init();
+    } else {
+        window.addEventListener("bs-loaded", init);
+    }
 })();
