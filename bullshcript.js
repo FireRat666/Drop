@@ -354,7 +354,7 @@
             colorVisible = true;
             colorVec = COLORS[gameState.targetColorIndex].vec;
             if (remaining <= 3 && remaining > 0 && remaining !== lastTick) {
-                audio.tick.PlayOneShotFromUrl("https://firer.at/files/tick.mp3");
+                audio.tick.PlayOneShotFromUrl("https://audiofiles.firer.at/mp3/Tick.mp3");
                 lastTick = remaining;
             }
         } else if (gameState.status === "LOBBY") {
