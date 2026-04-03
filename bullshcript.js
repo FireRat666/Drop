@@ -108,19 +108,20 @@
         await floor.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(30, 0.5, 30) }));
         await floor.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.1, 0.1, 0.1, 1) }));
 
-        // Buttons Container
-        const buttonGroup = new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(0, 1, -10) });
+        // Buttons Container - Positioned clearly on the lobby floor
+        const buttonGroup = new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(0, 1, 0) });
 
-        // helper for buttons - add text component directly to the button object
+        // helper for buttons - add text as a separate child object to ensure visibility
         const createBtn = async (name, xPos, color, text, handler) => {
             const btn = new BS.GameObject({ name: name, parent: buttonGroup, localPosition: new BS.Vector3(xPos, 0, 0) });
             await btn.AddComponent(new BS.BanterBox({ width: 2, height: 0.6, depth: 1 }));
             await btn.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(2, 0.6, 1) }));
             await btn.AddComponent(new BS.BanterMaterial({ color: color }));
-            btn.SetLayer(5);
+            btn.SetLayer(5); // UI Layer
 
-            // Adding text component directly to the button object
-            await btn.AddComponent(new BS.BanterText({
+            // Text on top of the button
+            const t = new BS.GameObject({ name: name + "Text", parent: btn, localPosition: new BS.Vector3(0, 0.4, 0), localEulerAngles: new BS.Vector3(90, 0, 0) });
+            await t.AddComponent(new BS.BanterText({
                 text: text,
                 fontSize: 0.3,
                 color: new BS.Vector4(1, 1, 1, 1),
@@ -132,31 +133,27 @@
             return btn;
         };
 
-        // Join Button
+        // All buttons grouped together in the lobby
         await createBtn("JoinBtn", 0, new BS.Vector4(0, 0.5, 1, 1), "JOIN GAME", () => {
             scene.SetUserProps({ inGame: "true" }, scene.localUser.uid);
             scene.TeleportTo(new BS.Vector3(0, GAME_HEIGHT + 2, 0), 0, true);
         });
 
-        // Hard Mode Toggle
         await createBtn("HardModeBtn", -3, new BS.Vector4(0.8, 0.1, 0.1, 1), "HARD MODE: OFF", () => {
             if (!isHost()) return;
             updateState({ hardMode: !gameState.hardMode });
         });
 
-        // Timer Adjust (5s)
         await createBtn("Timer5Btn", 3, new BS.Vector4(0.1, 0.8, 0.1, 1), "SET: 5S", () => {
             if (!isHost()) return;
             updateState({ initialCountdown: 5 });
         });
 
-        // Timer Adjust (10s)
         await createBtn("Timer10Btn", 6, new BS.Vector4(0.1, 0.8, 0.1, 1), "SET: 10S", () => {
             if (!isHost()) return;
             updateState({ initialCountdown: 10 });
         });
 
-        // Reset Button
         await createBtn("ResetBtn", 9, new BS.Vector4(0.5, 0.5, 0.5, 1), "RESET GAME", () => {
             if (!isHost()) return;
             updateState({ status: "LOBBY", round: 0 });
@@ -244,9 +241,9 @@
         updateVisuals();
 
         // Update Button Labels in Lobby
-        const hardBtn = await scene.Find("HardModeBtn");
-        if (hardBtn) {
-            const txt = await hardBtn.GetComponent(BS.CT.BanterText);
+        const hardBtnTextObj = await scene.Find("HardModeBtnText");
+        if (hardBtnTextObj) {
+            const txt = await hardBtnTextObj.GetComponent(BS.CT.BanterText);
             if (txt) txt.text = `HARD MODE: ${gameState.hardMode ? "ON" : "OFF"}`;
         }
     }
