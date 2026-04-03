@@ -3,6 +3,7 @@
 
     // --- Configuration ---
     const STATE_KEY = "colour_drop_game_state";
+    const USER_DATA_KEY_PREFIX = "cd_user:";
     const GRID_SIZE = 8;
     const TILE_SIZE = 3;
     const GAME_HEIGHT = 10;
@@ -233,15 +234,10 @@
                 if (now - lastFallTime > 1000) { // 1 second debounce
                     lastFallTime = now;
                     console.log("Local player fell! Processing score and teleporting to lobby.");
-                    incrementScore("falls"); // Increment fall count
 
-                    // Update survival score if a game session was active
-                    if (gameStartTime > 0) {
-                        const survivalTime = now - gameStartTime;
-                        updateSurvivalScore(survivalTime, gameModeAtStart);
-                        gameStartTime = 0; // Reset for next session
-                        console.log(`Survival time: ${survivalTime / 1000}s in ${gameModeAtStart ? 'Hard' : 'Normal'} Mode.`);
-                    }
+                    // Unified user stats update
+                    updateUserStats(gameStartTime > 0 ? now - gameStartTime : 0, gameModeAtStart);
+                    gameStartTime = 0; // Reset for next session
 
                     scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 0, true);
                 } else {
@@ -301,10 +297,10 @@
     function setupNetworking() {
         scene.On("space-state-changed", (e) => {
             if (e.detail.changes.some(c => c.property === STATE_KEY)) sync();
-            updateScoreboard(); // Update scoreboard on any state change
+            updateScoreboard();
         });
         sync();
-        updateScoreboard(); // Initial scoreboard update
+        updateScoreboard();
     }
 
     async function sync() {
@@ -333,74 +329,74 @@
 
         let scoreStr = "<b>SCOREBOARD</b>\n\n";
         const state = scene.spaceState.public;
-
-        const players = {}; // uid -> { name, falls, bestNormal, bestHard }
+        const players = [];
 
         Object.keys(state).forEach(key => {
-            const parts = key.split(":");
-            const type = parts[0];
-            const uid = parts[1];
-
-            if (!uid) return; // Skip if UID is missing
-
-            if (!players[uid]) players[uid] = { name: "Unknown", falls: 0, bestNormal: 0, bestHard: 0 };
-
-            if (type === "cd_falls") {
-                players[uid].falls = parseInt(state[key] || "0");
-            } else if (type === "cd_name") {
-                players[uid].name = state[key];
-            } else if (type === "cd_best_normal") {
-                players[uid].bestNormal = parseInt(state[key] || "0");
-            } else if (type === "cd_best_hard") {
-                players[uid].bestHard = parseInt(state[key] || "0");
+            if (key.startsWith(USER_DATA_KEY_PREFIX)) {
+                try {
+                    players.push(JSON.parse(state[key]));
+                } catch (e) { console.error("Error parsing user stats:", e); }
             }
         });
 
-        const sortedByFalls = Object.values(players).sort((a, b) => b.falls - a.falls).slice(0, 5);
-        const sortedByNormalTime = Object.values(players).filter(p => p.bestNormal > 0).sort((a, b) => b.bestNormal - a.bestNormal).slice(0, 5);
-        const sortedByHardTime = Object.values(players).filter(p => p.bestHard > 0).sort((a, b) => b.bestHard - a.bestHard).slice(0, 5);
-
         scoreStr += "<size=1.2><b>Falls:</b></size>\n";
-        if (sortedByFalls.length === 0) scoreStr += "No falls recorded yet!\n";
+        const sortedByFalls = [...players].sort((a, b) => b.falls - a.falls).slice(0, 5);
+        if (sortedByFalls.length === 0) scoreStr += "No falls yet!\n";
         else sortedByFalls.forEach(p => scoreStr += `${p.name}: ${p.falls}\n`);
 
         scoreStr += "\n<size=1.2><b>Best Normal Survival:</b></size>\n";
-        if (sortedByNormalTime.length === 0) scoreStr += "No scores yet!\n";
-        else sortedByNormalTime.forEach(p => scoreStr += `${p.name}: ${(p.bestNormal / 1000).toFixed(1)}s\n`);
+        const sortedByNormal = [...players].filter(p => p.bestNormal > 0).sort((a, b) => b.bestNormal - a.bestNormal).slice(0, 5);
+        if (sortedByNormal.length === 0) scoreStr += "No scores yet!\n";
+        else sortedByNormal.forEach(p => scoreStr += `${p.name}: ${(p.bestNormal / 1000).toFixed(1)}s\n`);
 
         scoreStr += "\n<size=1.2><b>Best Hard Survival:</b></size>\n";
-        if (sortedByHardTime.length === 0) scoreStr += "No scores yet!\n";
-        else sortedByHardTime.forEach(p => scoreStr += `${p.name}: ${(p.bestHard / 1000).toFixed(1)}s\n`);
+        const sortedByHard = [...players].filter(p => p.bestHard > 0).sort((a, b) => b.bestHard - a.bestHard).slice(0, 5);
+        if (sortedByHard.length === 0) scoreStr += "No scores yet!\n";
+        else sortedByHard.forEach(p => scoreStr += `${p.name}: ${(p.bestHard / 1000).toFixed(1)}s\n`);
 
         scoreboardText.text = scoreStr;
     }
 
-    function incrementScore(type) {
+    function updateUserStats(survivalTime, modeAtStart) {
         const uid = scene.localUser.uid;
-        const key = `cd_${type}:${uid}`;
-        const nameKey = `cd_name:${uid}`;
-        const current = parseInt(scene.spaceState.public[key] || "0");
-        const props = { [key]: (current + 1).toString() };
-        if (!scene.spaceState.public[nameKey]) props[nameKey] = scene.localUser.name.replace(/<[^>]*>/g, '');
-        scene.SetPublicSpaceProps(props);
-    }
+        const key = USER_DATA_KEY_PREFIX + uid;
+        const currentDataRaw = scene.spaceState.public[key];
 
-    function updateSurvivalScore(survivalTime, hardMode) {
-        const uid = scene.localUser.uid;
-        const modeKey = hardMode ? "hard" : "normal";
-        const scoreKey = `cd_best_${modeKey}:${uid}`;
-        const nameKey = `cd_name:${uid}`;
+        let stats = {
+            uid: uid,
+            name: scene.localUser.name.replace(/<[^>]*>/g, ''),
+            falls: 0,
+            bestNormal: 0,
+            bestHard: 0
+        };
 
-        const currentBest = parseInt(scene.spaceState.public[scoreKey] || "0");
-
-        if (survivalTime > currentBest) {
-            console.log(`New personal best for ${scene.localUser.name} in ${modeKey} mode: ${(survivalTime / 1000).toFixed(1)}s`);
-            const props = { [scoreKey]: survivalTime.toString() };
-            if (!scene.spaceState.public[nameKey]) props[nameKey] = scene.localUser.name.replace(/<[^>]*>/g, '');
-            scene.SetPublicSpaceProps(props);
-        } else {
-            console.log(`Survival time ${(survivalTime / 1000).toFixed(1)}s not better than current best ${(currentBest / 1000).toFixed(1)}s in ${modeKey} mode.`);
+        if (currentDataRaw) {
+            try {
+                stats = JSON.parse(currentDataRaw);
+            } catch (e) { console.error("Error parsing current user stats:", e); }
         }
+
+        // Increment falls
+        stats.falls++;
+        // Update name in case it changed
+        stats.name = scene.localUser.name.replace(/<[^>]*>/g, '');
+
+        // Update personal bests if applicable
+        if (survivalTime > 0) {
+            if (modeAtStart) {
+                if (survivalTime > stats.bestHard) {
+                    console.log(`New Hard Mode PB: ${(survivalTime/1000).toFixed(1)}s`);
+                    stats.bestHard = survivalTime;
+                }
+            } else {
+                if (survivalTime > stats.bestNormal) {
+                    console.log(`New Normal Mode PB: ${(survivalTime/1000).toFixed(1)}s`);
+                    stats.bestNormal = survivalTime;
+                }
+            }
+        }
+
+        scene.SetPublicSpaceProps({ [key]: JSON.stringify(stats) });
     }
 
     let lastTick = 0;
