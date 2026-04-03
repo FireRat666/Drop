@@ -107,23 +107,23 @@
         const root = new BS.GameObject({ name: "Environment" });
 
         // Lobby Floor
-        const floor = await new BS.GameObject({ name: "SpectatorLobby", parent: root, localPosition: new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y - 0.05, LOBBY_POS_RAW.z) });
+        const floor = await new BS.GameObject({ name: "SpectatorLobby", parent: root, localPosition: new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y - 0.05, LOBBY_POS_RAW.z) }).Async();
         await floor.AddComponent(new BS.BanterBox({ width: 30, height: 0.5, depth: 30 }));
         await floor.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(30, 0.5, 30) }));
         await floor.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.1, 0.1, 0.1, 1) }));
 
         // Buttons Container - Centered in lobby
-        const buttonGroup = await new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(0, 1, 0) });
+        const buttonGroup = await new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(0, 1, 0) }).Async();
 
         // helper for buttons
         const createBtn = async (name, xPos, color, text, handler) => {
-            const btn = await new BS.GameObject({ name: name, parent: buttonGroup, localPosition: new BS.Vector3(xPos, 0, 0) });
+            const btn = await new BS.GameObject({ name: name, parent: buttonGroup, localPosition: new BS.Vector3(xPos, 0, 0) }).Async();
             await btn.AddComponent(new BS.BanterBox({ width: 1, height: 0.4, depth: 0.5 }));
             await btn.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(1, 0.4, 0.5) }));
             await btn.AddComponent(new BS.BanterMaterial({ color: color }));
             btn.SetLayer(5);
 
-            const t = await new BS.GameObject({ name: name + "Text", parent: btn, localPosition: new BS.Vector3(0, 0.25, 0), localEulerAngles: new BS.Vector3(90, 0, 0) });
+            const t = await new BS.GameObject({ name: name + "Text", parent: btn, localPosition: new BS.Vector3(0, 0.5, 0), localEulerAngles: new BS.Vector3(90, 0, 0) }).Async();
             await t.AddComponent(new BS.BanterText({
                 text: text,
                 fontSize: 2,
@@ -162,34 +162,31 @@
             updateState({ status: "LOBBY", round: 0 });
         });
 
-        // Death Zone
-        const deadZone = new BS.GameObject({ name: "DeadZone", localPosition: new BS.Vector3(0, 5, 0) });
+        const deadZone = await new BS.GameObject({ name: "DeadZone", localPosition: new BS.Vector3(0, 5, 0) }).Async();
         await deadZone.AddComponent(new BS.BoxCollider({ isTrigger: true, size: new BS.Vector3(100, 2, 100) }));
         await deadZone.AddComponent(new BS.BanterColliderEvents());
         deadZone.On("trigger-enter", (e) => {
-            console.log("DeadZone: trigger-enter detected");
             if (e.detail.user && e.detail.user.isLocal) {
                 if (scene.localUser.props.inGame === "true") {
-                    console.log("DeadZone: Local player fell! Teleporting to lobby.");
                     scene.SetUserProps({ inGame: "false" }, scene.localUser.uid);
-                    scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 180, true);
+                    scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 0, true);
                 }
             }
         });
     }
 
     async function buildGrid() {
-        const gridRoot = new BS.GameObject({ name: "GridRoot", localPosition: new BS.Vector3(0, GAME_HEIGHT, 0) });
+        const gridRoot = await new BS.GameObject({ name: "GridRoot", localPosition: new BS.Vector3(0, GAME_HEIGHT, 0) }).Async();
         const offset = (GRID_SIZE * TILE_SIZE) / 2 - (TILE_SIZE / 2);
 
         for (let x = 0; x < GRID_SIZE; x++) {
             for (let z = 0; z < GRID_SIZE; z++) {
                 const tileName = `Tile_${x}_${z}`;
-                const tile = new BS.GameObject({
+                const tile = await new BS.GameObject({
                     name: tileName,
                     parent: gridRoot,
                     localPosition: new BS.Vector3(x * TILE_SIZE - offset, 0, z * TILE_SIZE - offset)
-                });
+                }).Async();
                 await tile.AddComponent(new BS.BanterBox({ width: TILE_SIZE - 0.1, height: 0.4, depth: TILE_SIZE - 0.1 }));
                 await tile.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(TILE_SIZE - 0.1, 0.4, TILE_SIZE - 0.1) }));
                 const mat = await tile.AddComponent(new BS.BanterMaterial("Unlit/Diffuse", "", new BS.Vector4(1, 1, 1, 1), BS.MaterialSide.Front, false, tileName));
@@ -199,14 +196,14 @@
     }
 
     async function setupUI() {
-        const uiAnchor = new BS.GameObject({ name: "UIAnchor", localPosition: new BS.Vector3(0, GAME_HEIGHT + 12, 0) });
+        const uiAnchor = await new BS.GameObject({ name: "UIAnchor", localPosition: new BS.Vector3(0, GAME_HEIGHT + 12, 0) }).Async();
         ui.root = uiAnchor;
 
         const createDisplay = async (name, pos, rot) => {
-            const panel = new BS.GameObject({ name: name, parent: uiAnchor, localPosition: pos, localEulerAngles: rot });
-            const textObj = new BS.GameObject({ name: "Label", parent: panel, localPosition: new BS.Vector3(0, 4, 0) });
+            const panel = await new BS.GameObject({ name: name, parent: uiAnchor, localPosition: pos, localEulerAngles: rot }).Async();
+            const textObj = await new BS.GameObject({ name: "Label", parent: panel, localPosition: new BS.Vector3(0, 4, 0) }).Async();
             const textComp = await textObj.AddComponent(new BS.BanterText({ text: "COLOUR DROP", fontSize: 12, color: new BS.Vector4(1, 1, 1, 1), horizontalAlignment: BS.HorizontalAlignment.Center }));
-            const cube = new BS.GameObject({ name: "ColorCube", parent: panel, localPosition: new BS.Vector3(0, -1, 0) });
+            const cube = await new BS.GameObject({ name: "ColorCube", parent: panel, localPosition: new BS.Vector3(0, -1, 0) }).Async();
             await cube.AddComponent(new BS.BanterBox({ width: 5, height: 5, depth: 5 }));
             const mat = await cube.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(1, 1, 1, 1) }));
             return { text: textComp, mat: mat, cube: cube };
@@ -221,7 +218,7 @@
     }
 
     async function setupAudio() {
-        const audioRoot = new BS.GameObject({ name: "Audio" });
+        const audioRoot = await new BS.GameObject({ name: "Audio" }).Async();
         audio.tick = await audioRoot.AddComponent(new BS.BanterAudioSource({ volume: 0.5, loop: false, playOnAwake: false }));
     }
 
@@ -291,13 +288,11 @@
         if (now < gameState.endTime) return;
 
         if (gameState.status === "LOBBY") {
-            // Seed randomized once on game start
             const initialSeed = Math.floor(Math.random() * 999999);
             startNextRound(1, initialSeed);
         } else if (gameState.status === "SHOWING") {
             updateState({ status: "DROPPED", endTime: now + (TIMINGS.DROPPED * 1000) });
         } else if (gameState.status === "DROPPED") {
-            // ONLY Change seed if Hard Mode is ENABLED. Triggers as soon as status becomes RESETTING.
             const nextSeed = gameState.hardMode ? Math.floor(Math.random() * 999999) : gameState.seed;
             updateState({
                 status: "RESETTING",
