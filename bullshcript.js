@@ -107,23 +107,23 @@
         const root = new BS.GameObject({ name: "Environment" });
 
         // Lobby Floor
-        const floor = new BS.GameObject({ name: "SpectatorLobby", parent: root, localPosition: new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y - 0.05, LOBBY_POS_RAW.z) });
+        const floor = await new BS.GameObject({ name: "SpectatorLobby", parent: root, localPosition: new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y - 0.05, LOBBY_POS_RAW.z) });
         await floor.AddComponent(new BS.BanterBox({ width: 30, height: 0.5, depth: 30 }));
         await floor.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(30, 0.5, 30) }));
         await floor.AddComponent(new BS.BanterMaterial({ color: new BS.Vector4(0.1, 0.1, 0.1, 1) }));
 
         // Buttons Container - Centered in lobby
-        const buttonGroup = new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(0, 1, 0) });
+        const buttonGroup = await new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(0, 1, 0) });
 
         // helper for buttons
         const createBtn = async (name, xPos, color, text, handler) => {
-            const btn = new BS.GameObject({ name: name, parent: buttonGroup, localPosition: new BS.Vector3(xPos, 0, 0) });
+            const btn = await new BS.GameObject({ name: name, parent: buttonGroup, localPosition: new BS.Vector3(xPos, 0, 0) });
             await btn.AddComponent(new BS.BanterBox({ width: 1, height: 0.4, depth: 0.5 }));
             await btn.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(1, 0.4, 0.5) }));
             await btn.AddComponent(new BS.BanterMaterial({ color: color }));
             btn.SetLayer(5);
 
-            const t = new BS.GameObject({ name: name + "Text", parent: btn, localPosition: new BS.Vector3(0, 0.25, 0), localEulerAngles: new BS.Vector3(90, 0, 0) });
+            const t = await new BS.GameObject({ name: name + "Text", parent: btn, localPosition: new BS.Vector3(0, 0.25, 0), localEulerAngles: new BS.Vector3(90, 0, 0) });
             await t.AddComponent(new BS.BanterText({
                 text: text,
                 fontSize: 2,
