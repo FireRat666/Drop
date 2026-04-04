@@ -157,8 +157,8 @@
         const buttonGroup = await new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(0, 1, 3) }).Async();
         const createBtn = async (name, xPos, color, text, handler) => {
             const btn = await new BS.GameObject({ name: name, parent: buttonGroup, localPosition: new BS.Vector3(xPos, 0, 0) }).Async();
-            await btn.AddComponent(new BS.BanterBox({ width: 1.8, height: 0.6, depth: 0.8 }));
-            await btn.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(1.8, 0.6, 0.8) }));
+            await btn.AddComponent(new BS.BanterBox({ width: 1, height: 0.4, depth: 0.5 }));
+            await btn.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(1, 0.4, 0.5) }));
             await btn.AddComponent(new BS.BanterMaterial({ shaderName: "Standard", color: color }));
             btn.SetLayer(5);
             const t = await new BS.GameObject({ name: name + "Text", parent: btn, localPosition: new BS.Vector3(0, 0.4, 0) }).Async();
