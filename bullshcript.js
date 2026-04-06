@@ -415,7 +415,20 @@
     function startNextRound(roundNum, seed) {
         const speedScale = gameState.hardMode ? 0.6 : 0.35;
         const duration = Math.max(1.8, gameState.initialCountdown - (roundNum * speedScale));
-        updateState({ status: "SHOWING", round: roundNum, seed: seed, targetColorIndex: Math.floor(Math.random() * COLORS.length), endTime: Date.now() + (duration * 1000) });
+
+        // Calculate available colors on the board for this seed
+        const availableColors = new Set();
+        for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+            availableColors.add(Math.floor(seededRandom(seed + i) * COLORS.length));
+        }
+        const colorsList = Array.from(availableColors);
+
+        // Pick one of the available colors
+        const targetColorIndex = colorsList.length > 0
+            ? colorsList[Math.floor(Math.random() * colorsList.length)]
+            : Math.floor(Math.random() * COLORS.length);
+
+        updateState({ status: "SHOWING", round: roundNum, seed: seed, targetColorIndex: targetColorIndex, endTime: Date.now() + (duration * 1000) });
     }
 
     function updateState(patch) {
