@@ -314,17 +314,6 @@
 
         const hardTxt = await (await scene.Find("HardModeBtnText"))?.GetComponent(BS.CT.BanterText);
         if (hardTxt) hardTxt.text = `HARD: ${gameState.hardMode ? "ON" : "OFF"}`;
-
-        if (hostDisplay) {
-            const hostUser = scene.users[gameState.currentHostUid];
-            const requester = scene.users[gameState.hostStealRequesterUid];
-            if (gameState.hostStealStartTime > 0 && requester) {
-                const remaining = Math.max(0, Math.ceil((TIMINGS.HOST_STEAL_DURATION - (Date.now() - gameState.hostStealStartTime)) / 1000));
-                hostDisplay.text = `<color=#ff0000>STEALING HOST: ${remaining}s</color>\n(Requested by: ${requester.name})`;
-            } else {
-                hostDisplay.text = hostUser ? `CURRENT HOST: ${hostUser.name}` : "NO HOST ASSIGNED";
-            }
-        }
     }
 
     function updateVisuals() {
@@ -393,6 +382,17 @@
             d.mat.color = colorVec;
             d.cube.SetActive(colorVisible);
         });
+
+        if (hostDisplay) {
+            const hostUser = scene.users[gameState.currentHostUid];
+            const requester = scene.users[gameState.hostStealRequesterUid];
+            if (gameState.hostStealStartTime > 0 && requester) {
+                const remainingHost = Math.max(0, Math.ceil((TIMINGS.HOST_STEAL_DURATION - (now - gameState.hostStealStartTime)) / 1000));
+                hostDisplay.text = `<color=#ff0000>STEALING HOST: ${remainingHost}s</color>\n(Requested by: ${requester.name})`;
+            } else {
+                hostDisplay.text = hostUser ? `CURRENT HOST: ${hostUser.name}` : "NO HOST ASSIGNED";
+            }
+        }
 
         if (isHost()) driveHostLogic(now);
     }
