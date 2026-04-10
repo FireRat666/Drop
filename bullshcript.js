@@ -349,7 +349,7 @@
         const raw = scene.spaceState.public[key];
         if (raw) { try { stats = JSON.parse(raw); } catch (e) {} }
         stats.falls++;
-        stats.name = scene.localUser.name.replace(/<[^|]*>/g, '');
+        stats.name = scene.localUser.name.replace(/<[^>]*>/g, '');
         if (survivalTime > 0) {
             if (modeAtStart) { if (survivalTime > stats.bestHard) stats.bestHard = survivalTime; }
             else { if (survivalTime > stats.bestNormal) stats.bestNormal = survivalTime; }
