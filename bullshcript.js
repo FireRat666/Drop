@@ -343,6 +343,7 @@
     }
 
     function updateUserStats(survivalTime, modeAtStart) {
+        console.log(`DROP GAME: Updating stats. SurvivalTime: ${survivalTime}, ModeAtStart: ${modeAtStart}`);
         const uid = scene.localUser.uid;
         const key = USER_DATA_KEY_PREFIX + uid;
         let stats = { uid: uid, name: scene.localUser.name.replace(/<[^>]*>/g, ''), falls: 0, bestNormal: 0, bestHard: 0 };
@@ -354,6 +355,7 @@
             if (modeAtStart) { if (survivalTime > stats.bestHard) stats.bestHard = survivalTime; }
             else { if (survivalTime > stats.bestNormal) stats.bestNormal = survivalTime; }
         }
+        console.log(`DROP GAME: Saving stats for ${stats.name}:`, stats);
         scene.SetPublicSpaceProps({ [key]: JSON.stringify(stats) });
     }
 
@@ -362,15 +364,22 @@
         const now = Date.now();
 
         // Manage survival timer
-        if (gameState.status === "LOBBY") {
-            gameStartTime = 0;
+        if (gameState.status === "LOBBY" || gameState.status === "RESETTING") {
+            if (gameStartTime !== 0) {
+                console.log("DROP GAME: Resetting survival timer (Lobby/Resetting)");
+                gameStartTime = 0;
+            }
         } else if (isLocalInArena) {
             if (gameStartTime === 0 && (gameState.status === "SHOWING" || gameState.status === "DROPPED")) {
+                console.log("DROP GAME: Starting survival timer");
                 gameStartTime = now;
                 gameModeAtStart = gameState.hardMode;
             }
         } else {
-            gameStartTime = 0;
+            if (gameStartTime !== 0) {
+                console.log("DROP GAME: Resetting survival timer (Exited Arena)");
+                gameStartTime = 0;
+            }
         }
 
         const remaining = Math.max(0, Math.ceil((gameState.endTime - now) / 1000));
