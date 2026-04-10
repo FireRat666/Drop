@@ -81,7 +81,7 @@
         console.log("DROP GAME: BS Ready. Building Environment...");
 
         const settings = new BS.SceneSettings();
-        settings.EnableTeleport = true;
+        settings.EnableTeleport = false;
         settings.EnableJump = true;
         settings.MaxOccupancy = 30;
         settings.RefreshRate = 72;
@@ -176,17 +176,17 @@
             const hostPresent = gameState.currentHostUid && scene.users[gameState.currentHostUid];
             if (!hostPresent) {
                 updateState({ currentHostUid: scene.localUser.uid, hostStealStartTime: 0, hostStealRequesterUid: null });
-            } else if (gameState.currentHostUid !== scene.localUser.uid) {
+            } else if (gameState.currentHostUid === scene.localUser.uid) {
+                updateState({ hostStealStartTime: 0, hostStealRequesterUid: null });
+            } else {
                 updateState({ hostStealStartTime: Date.now(), hostStealRequesterUid: scene.localUser.uid });
             }
         });
 
         await createBtn("JoinBtn", -2.5, new BS.Vector4(0, 0.5, 1, 1), "JOIN GAME", () => {
             scene.TeleportTo(new BS.Vector3(0, GAME_HEIGHT + 2, 0), 0, true);
-            gameStartTime = Date.now();
-            gameModeAtStart = gameState.hardMode;
-            if (isHost() && gameState.status === "LOBBY") {
-                updateState({ status: "RESETTING", endTime: Date.now() + 5000 });
+            if (gameState.status === "LOBBY") {
+                updateState({ status: "RESETTING", endTime: Date.now() + 8000 });
             }
         });
 
@@ -218,7 +218,7 @@
         arenaTracker.On("trigger-enter", (e) => {
             if (e.detail.user && e.detail.user.isLocal) {
                 isLocalInArena = true;
-                if (isHost() && gameState.status === "LOBBY") updateState({ status: "RESETTING", endTime: Date.now() + 5000 });
+                if (gameState.status === "LOBBY") updateState({ status: "RESETTING", endTime: Date.now() + 5000 });
             }
         });
         arenaTracker.On("trigger-exit", (e) => {
@@ -337,9 +337,9 @@
             else sorted.forEach((p, i) => str += `${i+1}. ${p.name}: ${formatter(p)}\n`);
             comp.text = str;
         };
-        updateBoard(scoreboardFalls, "MOST FALLS", [...players].sort((a, b) => b.falls - a.falls).slice(0, 10), p => p.falls);
-        updateBoard(scoreboardNormal, "NORMAL SURVIVAL", [...players].filter(p => p.bestNormal > 0).sort((a, b) => b.bestNormal - a.bestNormal).slice(0, 10), p => (p.bestNormal / 1000).toFixed(1) + "s");
-        updateBoard(scoreboardHard, "HARD SURVIVAL", [...players].filter(p => p.bestHard > 0).sort((a, b) => b.bestHard - a.bestHard).slice(0, 10), p => (p.bestHard / 1000).toFixed(1) + "s");
+        updateBoard(scoreboardFalls, "MOST FALLS", [...players].sort((a, b) => b.falls - a.falls).slice(0, 50), p => p.falls);
+        updateBoard(scoreboardNormal, "NORMAL SURVIVAL", [...players].filter(p => p.bestNormal > 0).sort((a, b) => b.bestNormal - a.bestNormal).slice(0, 50), p => (p.bestNormal / 1000).toFixed(1) + "s");
+        updateBoard(scoreboardHard, "HARD SURVIVAL", [...players].filter(p => p.bestHard > 0).sort((a, b) => b.bestHard - a.bestHard).slice(0, 50), p => (p.bestHard / 1000).toFixed(1) + "s");
     }
 
     function updateUserStats(survivalTime, modeAtStart) {
@@ -349,7 +349,7 @@
         const raw = scene.spaceState.public[key];
         if (raw) { try { stats = JSON.parse(raw); } catch (e) {} }
         stats.falls++;
-        stats.name = scene.localUser.name.replace(/<[^>]*>/g, '');
+        stats.name = scene.localUser.name.replace(/<[^|]*>/g, '');
         if (survivalTime > 0) {
             if (modeAtStart) { if (survivalTime > stats.bestHard) stats.bestHard = survivalTime; }
             else { if (survivalTime > stats.bestNormal) stats.bestNormal = survivalTime; }
@@ -360,6 +360,19 @@
     let lastTick = 0;
     function update() {
         const now = Date.now();
+
+        // Manage survival timer
+        if (gameState.status === "LOBBY") {
+            gameStartTime = 0;
+        } else if (isLocalInArena) {
+            if (gameStartTime === 0 && (gameState.status === "SHOWING" || gameState.status === "DROPPED")) {
+                gameStartTime = now;
+                gameModeAtStart = gameState.hardMode;
+            }
+        } else {
+            gameStartTime = 0;
+        }
+
         const remaining = Math.max(0, Math.ceil((gameState.endTime - now) / 1000));
         let displayStr = "";
         let colorVisible = false;
