@@ -379,8 +379,14 @@
 
             const p = tile.obj.transform.position;
             const r = tile.obj.transform.rotation;
-            tile.resetStartPos = { x: p.x, y: p.y, z: p.z };
-            tile.resetStartRot = { x: r.x, y: r.y, z: r.z, w: r.w };
+            
+            // Only reset if it fell down (Y differs significantly from start position)
+            tile.needsReset = Math.abs(p.y - tile.initialWorldPos.y) > 0.1;
+            
+            if (tile.needsReset) {
+                tile.resetStartPos = { x: p.x, y: p.y, z: p.z };
+                tile.resetStartRot = { x: r.x, y: r.y, z: r.z, w: r.w };
+            }
         });
 
         const animate = () => {
@@ -388,7 +394,7 @@
             const t = Math.min(1, elapsed / duration);
 
             tiles.forEach(tile => {
-                if (!tile.resetStartPos || !tile.initialWorldPos) return;
+                if (!tile.needsReset || !tile.resetStartPos || !tile.initialWorldPos) return;
 
                 const px = tile.resetStartPos.x + (tile.initialWorldPos.x - tile.resetStartPos.x) * t;
                 const py = tile.resetStartPos.y + (tile.initialWorldPos.y - tile.resetStartPos.y) * t;
@@ -407,6 +413,14 @@
                 requestAnimationFrame(animate);
             } else {
                 isResettingSmoothly = false;
+                
+                // Snap the resetting tiles perfectly into position at the end
+                tiles.forEach(tile => {
+                    if (tile.needsReset && tile.initialWorldPos) {
+                         tile.rb.MovePosition(new BS.Vector3(tile.initialWorldPos.x, tile.initialWorldPos.y, tile.initialWorldPos.z));
+                         tile.rb.MoveRotation(new BS.Quaternion(tile.initialRotation.x, tile.initialRotation.y, tile.initialRotation.z, tile.initialRotation.w));
+                    }
+                });
             }
         };
         requestAnimationFrame(animate);
