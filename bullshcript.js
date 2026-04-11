@@ -290,7 +290,15 @@
                     await tile.AddComponent(new BS.BanterBox({ width: TILE_SIZE - 0.1, height: 0.4, depth: TILE_SIZE - 0.1 }));
                     await tile.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(TILE_SIZE - 0.1, 0.4, TILE_SIZE - 0.1) }));
                     const mat = await tile.AddComponent(new BS.BanterMaterial("Standard", "", new BS.Vector4(1, 1, 1, 1), BS.MaterialSide.Front, false, `Tile_${lx}_${lz}`));
-                    const rb = await tile.AddComponent(new BS.BanterRigidbody({ useGravity: true, isKinematic: true }));
+                    const rb = await tile.AddComponent(new BS.BanterRigidbody({
+                        useGravity: true,
+                        isKinematic: true,
+                        freezePositionX: true,
+                        freezePositionZ: true,
+                        freezeRotationX: true,
+                        freezeRotationY: true,
+                        freezeRotationZ: true
+                    }));
                     tiles.push({ obj: tile, mat: mat, rb: rb, x: lx, z: lz, initialWorldPos: initialWorldPos, initialRotation: initialRotation });
                 })(x, z));
             }
@@ -361,20 +369,18 @@
         if (isResettingSmoothly) return;
         isResettingSmoothly = true;
 
-        const duration = 1000;
+        const duration = 1500;
         const startTime = Date.now();
 
-        // Capture current transform state before starting interpolation
         tiles.forEach(tile => {
             tile.rb.isKinematic = true;
-            tile.rb.velocity = { x: 0, y: 0, z: 0 };
-            tile.rb.angularVelocity = { x: 0, y: 0, z: 0 };
+            tile.rb.velocity = new BS.Vector3(0, 0, 0);
+            tile.rb.angularVelocity = new BS.Vector3(0, 0, 0);
+
             const p = tile.obj.transform.position;
             const r = tile.obj.transform.rotation;
-            if (p && r) {
-                tile.resetStartPos = { x: p.x, y: p.y, z: p.z };
-                tile.resetStartRot = { x: r.x, y: r.y, z: r.z, w: r.w };
-            }
+            tile.resetStartPos = { x: p.x, y: p.y, z: p.z };
+            tile.resetStartRot = { x: r.x, y: r.y, z: r.z, w: r.w };
         });
 
         const animate = () => {
