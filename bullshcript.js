@@ -260,10 +260,10 @@
         for (let x = 0; x < GRID_SIZE; x++) {
             for (let z = 0; z < GRID_SIZE; z++) {
                 tilePromises.push((async (lx, lz) => {
-                    const startPos = new BS.Vector3(lx * TILE_SIZE - offset, 0, lz * TILE_SIZE - offset);
+                    const startPos = new BS.Vector3(lx * TILE_SIZE - offset, GAME_HEIGHT, lz * TILE_SIZE - offset); // Use absolute world coordinates for physics!
                     const tile = await new BS.GameObject({
                         name: `Tile_${lx}_${lz}`, parent: gridRoot,
-                        localPosition: startPos
+                        localPosition: new BS.Vector3(lx * TILE_SIZE - offset, 0, lz * TILE_SIZE - offset) // Relative to parent for visuals
                     }).Async();
                     await tile.AddComponent(new BS.BanterBox({ width: TILE_SIZE - 0.1, height: 0.4, depth: TILE_SIZE - 0.1 }));
                     await tile.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(TILE_SIZE - 0.1, 0.4, TILE_SIZE - 0.1) }));
