@@ -369,27 +369,35 @@
             tile.rb.isKinematic = true;
             tile.rb.velocity = { x: 0, y: 0, z: 0 };
             tile.rb.angularVelocity = { x: 0, y: 0, z: 0 };
-            const p = tile.obj.position;
-            const r = tile.obj.rotation;
-            tile.resetStartPos = { x: p.x, y: p.y, z: p.z };
-            tile.resetStartRot = { x: r.x, y: r.y, z: r.z, w: r.w };
+            const p = tile.obj.transform.position;
+            const r = tile.obj.transform.rotation;
+            if (p && r) {
+                tile.resetStartPos = { x: p.x, y: p.y, z: p.z };
+                tile.resetStartRot = { x: r.x, y: r.y, z: r.z, w: r.w };
+            }
         });
 
         const animate = () => {
             const elapsed = Date.now() - startTime;
-            const progress = Math.min(1, elapsed / duration);
+            const t = Math.min(1, elapsed / duration);
 
             tiles.forEach(tile => {
-                if (!tile.resetStartPos) return;
+                if (!tile.resetStartPos || !tile.initialWorldPos) return;
 
-                const pos = lerpVec3(tile.resetStartPos, tile.initialWorldPos, progress);
-                tile.rb.MovePosition(new BS.Vector3(pos.x, pos.y, pos.z));
+                const px = tile.resetStartPos.x + (tile.initialWorldPos.x - tile.resetStartPos.x) * t;
+                const py = tile.resetStartPos.y + (tile.initialWorldPos.y - tile.resetStartPos.y) * t;
+                const pz = tile.resetStartPos.z + (tile.initialWorldPos.z - tile.resetStartPos.z) * t;
+                tile.rb.MovePosition(new BS.Vector3(px, py, pz));
 
-                const rot = lerpQuat(tile.resetStartRot, tile.initialRotation, progress);
-                tile.rb.MoveRotation(new BS.Quaternion(rot.x, rot.y, rot.z, rot.w));
+                const rx = tile.resetStartRot.x + (tile.initialRotation.x - tile.resetStartRot.x) * t;
+                const ry = tile.resetStartRot.y + (tile.initialRotation.y - tile.resetStartRot.y) * t;
+                const rz = tile.resetStartRot.z + (tile.initialRotation.z - tile.resetStartRot.z) * t;
+                const rw = tile.resetStartRot.w + (tile.initialRotation.w - tile.resetStartRot.w) * t;
+                const mag = Math.sqrt(rx * rx + ry * ry + rz * rz + rw * rw);
+                tile.rb.MoveRotation(new BS.Quaternion(rx / mag, ry / mag, rz / mag, rw / mag));
             });
 
-            if (progress < 1 && (gameState.status === "RESETTING" || gameState.status === "LOBBY")) {
+            if (t < 1 && (gameState.status === "RESETTING" || gameState.status === "LOBBY")) {
                 requestAnimationFrame(animate);
             } else {
                 isResettingSmoothly = false;
