@@ -363,21 +363,20 @@
     function update() {
         const now = Date.now();
 
-        // Manage survival timer
-        if (gameState.status === "LOBBY" || gameState.status === "RESETTING") {
-            if (gameStartTime !== 0) {
-                console.log("DROP GAME: Resetting survival timer (Lobby/Resetting)");
-                gameStartTime = 0;
-            }
-        } else if (isLocalInArena) {
-            if (gameStartTime === 0 && (gameState.status === "SHOWING" || gameState.status === "DROPPED")) {
+        // Survival timer logic
+        // Game is considered "Flowing" if it's in a round OR resetting between rounds.
+        // It is NOT flowing if in LOBBY or the initial pre-game countdown (RESETTING round 0).
+        const isGameFlowing = gameState.status === "SHOWING" || gameState.status === "DROPPED" || (gameState.status === "RESETTING" && gameState.round > 0);
+
+        if (isLocalInArena && isGameFlowing) {
+            if (gameStartTime === 0) {
                 console.log("DROP GAME: Starting survival timer");
                 gameStartTime = now;
                 gameModeAtStart = gameState.hardMode;
             }
         } else {
             if (gameStartTime !== 0) {
-                console.log("DROP GAME: Resetting survival timer (Exited Arena)");
+                console.log(`DROP GAME: Resetting survival timer (Reason: status=${gameState.status}, round=${gameState.round}, inArena=${isLocalInArena})`);
                 gameStartTime = 0;
             }
         }
