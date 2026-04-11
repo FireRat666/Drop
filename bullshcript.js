@@ -53,6 +53,7 @@
     let scoreboardHard = null;
     let hostDisplay = null;
     let lastFallTime = 0;
+    let hostOnlyButtons = [];
 
     // Local player game session tracking
     let gameStartTime = 0;
@@ -124,7 +125,7 @@
         const rulesObj = await new BS.GameObject({ name: "RulesText", parent: floor, localPosition: new BS.Vector3(-12, 2, 0), localEulerAngles: new BS.Vector3(0, -90, 0) }).Async();
         await rulesObj.AddComponent(new BS.BanterText({
             text: "<size=1.5><b>HOW TO PLAY</b></size>\n\n1. Click <b>JOIN GAME</b> to teleport.\n2. Look at the displays for the <b>TARGET COLOR</b>.\n3. Stand on a matching tile before time runs out.\n4. All other tiles will drop!\n5. Survive as long as you can.\n\n<color=#ffcc00>Hard Mode: Randomizes board every round!</color>",
-            fontSize: 0.6,
+            fontSize: 1,
             color: new BS.Vector4(1, 1, 1, 1),
             horizontalAlignment: BS.HorizontalAlignment.Left
         }));
@@ -155,24 +156,33 @@
 
         // Controls
         const buttonGroup = await new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(0, 1, 3) }).Async();
-        const createBtn = async (name, xPos, color, text, handler) => {
+        const createBtn = async (name, xPos, color, text, hostOnly, handler) => {
             const btn = await new BS.GameObject({ name: name, parent: buttonGroup, localPosition: new BS.Vector3(xPos, 0, 0) }).Async();
             await btn.AddComponent(new BS.BanterBox({ width: 1, height: 0.4, depth: 0.5 }));
             await btn.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(1, 0.4, 0.5) }));
-            await btn.AddComponent(new BS.BanterMaterial({ shaderName: "Standard", color: color }));
+            const mat = await btn.AddComponent(new BS.BanterMaterial({ shaderName: "Standard", color: color }));
             btn.SetLayer(5);
             const t = await new BS.GameObject({ name: name + "Text", parent: btn, localPosition: new BS.Vector3(0, 0.4, 0) }).Async();
             await t.AddComponent(new BS.BanterText({ text: text, fontSize: 1.5, color: new BS.Vector4(1, 1, 1, 1), horizontalAlignment: BS.HorizontalAlignment.Center }));
-            btn.On("click", handler);
+
+            btn.On("click", async () => {
+                // Visual feedback
+                const pressedColor = new BS.Vector4(color.x * 0.5, color.y * 0.5, color.z * 0.5, color.w);
+                mat.color = pressedColor;
+                setTimeout(() => { mat.color = color; }, 200);
+                handler();
+            });
+
+            if (hostOnly) hostOnlyButtons.push(btn);
             return btn;
         };
 
-        await createBtn("HardModeBtn", -7.5, new BS.Vector4(0.8, 0.1, 0.1, 1), "HARD MODE", () => {
+        await createBtn("HardModeBtn", -7.5, new BS.Vector4(0.8, 0.1, 0.1, 1), "HARD MODE", true, () => {
             if (!isHost()) return;
             updateState({ hardMode: !gameState.hardMode });
         });
 
-        await createBtn("ClaimHostBtn", -5, new BS.Vector4(1, 0.8, 0, 1), "CLAIM HOST", () => {
+        await createBtn("ClaimHostBtn", -5, new BS.Vector4(1, 0.8, 0, 1), "CLAIM HOST", false, () => {
             const hostPresent = gameState.currentHostUid && scene.users[gameState.currentHostUid];
             if (!hostPresent) {
                 updateState({ currentHostUid: scene.localUser.uid, hostStealStartTime: 0, hostStealRequesterUid: null });
@@ -183,30 +193,30 @@
             }
         });
 
-        await createBtn("JoinBtn", -2.5, new BS.Vector4(0, 0.5, 1, 1), "JOIN GAME", () => {
+        await createBtn("JoinBtn", -2.5, new BS.Vector4(0, 0.5, 1, 1), "JOIN GAME", false, () => {
             scene.TeleportTo(new BS.Vector3(0, GAME_HEIGHT + 2, 0), 0, true);
             if (gameState.status === "LOBBY") {
                 updateState({ status: "RESETTING", endTime: Date.now() + 8000 });
             }
         });
 
-        await createBtn("Timer5Btn", 0, new BS.Vector4(0.1, 0.8, 0.1, 1), "5S", () => {
+        await createBtn("Timer5Btn", 0, new BS.Vector4(0.1, 0.8, 0.1, 1), "5S", true, () => {
             if (!isHost()) return;
             updateState({ initialCountdown: 5 });
         });
 
-        await createBtn("Timer10Btn", 2.5, new BS.Vector4(0.1, 0.8, 0.1, 1), "10S", () => {
+        await createBtn("Timer10Btn", 2.5, new BS.Vector4(0.1, 0.8, 0.1, 1), "10S", true, () => {
             if (!isHost()) return;
             updateState({ initialCountdown: 10 });
         });
 
-        await createBtn("MuteBtn", 5, new BS.Vector4(0.5, 0.2, 0.8, 1), "MUTE", async (e) => {
+        await createBtn("MuteBtn", 5, new BS.Vector4(0.5, 0.2, 0.8, 1), "MUTE", false, async (e) => {
             isMuted = !isMuted;
             const txt = await (await scene.Find("MuteBtnText")).GetComponent(BS.CT.BanterText);
             if (txt) txt.text = isMuted ? "UNMUTE" : "MUTE";
         });
 
-        await createBtn("ResetBtn", 7.5, new BS.Vector4(0.5, 0.5, 0.5, 1), "RESET", () => {
+        await createBtn("ResetBtn", 7.5, new BS.Vector4(0.5, 0.5, 0.5, 1), "RESET", true, () => {
             if (!isHost()) return;
             updateState({ status: "LOBBY", round: 0 });
         });
@@ -314,6 +324,13 @@
 
         const hardTxt = await (await scene.Find("HardModeBtnText"))?.GetComponent(BS.CT.BanterText);
         if (hardTxt) hardTxt.text = `HARD: ${gameState.hardMode ? "ON" : "OFF"}`;
+
+        updateButtonVisibility();
+    }
+
+    function updateButtonVisibility() {
+        const userIsHost = isHost();
+        hostOnlyButtons.forEach(btn => btn.SetActive(userIsHost));
     }
 
     function updateVisuals() {
@@ -413,6 +430,9 @@
                 hostDisplay.text = hostUser ? `CURRENT HOST: ${hostUser.name}` : "NO HOST ASSIGNED";
             }
         }
+
+        // Periodically update button visibility to ensure consistency
+        updateButtonVisibility();
 
         if (isHost()) driveHostLogic(now);
     }
