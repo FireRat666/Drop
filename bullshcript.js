@@ -372,7 +372,10 @@
         const duration = 1500;
         const startTime = Date.now();
 
-        tiles.forEach(tile => {
+        tiles.forEach((tile, index) => {
+            // Check if this tile was dropped before we reset its kinematic state
+            const didDrop = tile.rb.isKinematic === false;
+            
             tile.rb.isKinematic = true;
             tile.rb.velocity = new BS.Vector3(0, 0, 0);
             tile.rb.angularVelocity = new BS.Vector3(0, 0, 0);
@@ -380,15 +383,12 @@
             const p = tile.obj.transform.position;
             const r = tile.obj.transform.rotation;
             
-            // The transform p is actually local to the GridRoot.
-            // If it falls down, its local Y will become negative.
-            tile.needsReset = p.y < -0.1;
+            // To reliably target tiles from the *previous* round that fell without being affected 
+            // by the newly randomized seed, we identify them by their drop state.
+            tile.needsReset = didDrop;
             
             if (tile.needsReset) {
-                // Since MovePosition takes World coordinates, we convert local position to World position.
-                // GridRoot is at (0, GAME_HEIGHT, 0)
-                tile.resetStartPos = { x: p.x, y: p.y + GAME_HEIGHT, z: p.z };
-                // GridRoot is not rotated, so local rotation matches world rotation
+                tile.resetStartPos = { x: p.x, y: p.y, z: p.z };
                 tile.resetStartRot = { x: r.x, y: r.y, z: r.z, w: r.w };
             }
         });
