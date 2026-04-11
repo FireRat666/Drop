@@ -380,11 +380,15 @@
             const p = tile.obj.transform.position;
             const r = tile.obj.transform.rotation;
             
-            // Only reset if it fell down (Y differs significantly from start position)
-            tile.needsReset = Math.abs(p.y - tile.initialWorldPos.y) > 0.1;
+            // The transform p is actually local to the GridRoot.
+            // If it falls down, its local Y will become negative.
+            tile.needsReset = p.y < -0.1;
             
             if (tile.needsReset) {
-                tile.resetStartPos = { x: p.x, y: p.y, z: p.z };
+                // Since MovePosition takes World coordinates, we convert local position to World position.
+                // GridRoot is at (0, GAME_HEIGHT, 0)
+                tile.resetStartPos = { x: p.x, y: p.y + GAME_HEIGHT, z: p.z };
+                // GridRoot is not rotated, so local rotation matches world rotation
                 tile.resetStartRot = { x: r.x, y: r.y, z: r.z, w: r.w };
             }
         });
