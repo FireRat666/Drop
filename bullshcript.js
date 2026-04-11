@@ -198,12 +198,12 @@
             return btn;
         };
 
-        await createBtn("HardModeBtn", -7.5, new BS.Vector4(0.8, 0.1, 0.1, 1), "HARD MODE", true, () => {
+        await createBtn("HardModeBtn", -6.25, new BS.Vector4(0.8, 0.1, 0.1, 1), "HARD MODE", true, () => {
             if (!isHost()) return;
             updateState({ hardMode: !gameState.hardMode });
         });
 
-        await createBtn("ClaimHostBtn", -5, new BS.Vector4(1, 0.8, 0, 1), "CLAIM HOST", false, () => {
+        await createBtn("ClaimHostBtn", -3.75, new BS.Vector4(1, 0.8, 0, 1), "CLAIM HOST", false, () => {
             const hostPresent = gameState.currentHostUid && scene.users[gameState.currentHostUid];
             if (!hostPresent) {
                 updateState({ currentHostUid: scene.localUser.uid, hostStealStartTime: 0, hostStealRequesterUid: null });
@@ -214,30 +214,29 @@
             }
         });
 
-        await createBtn("JoinBtn", -2.5, new BS.Vector4(0, 0.5, 1, 1), "JOIN GAME", false, () => {
+        await createBtn("JoinBtn", -1.25, new BS.Vector4(0, 0.5, 1, 1), "JOIN GAME", false, () => {
             scene.TeleportTo(new BS.Vector3(0, GAME_HEIGHT + 2, 0), 0, true);
             if (gameState.status === "LOBBY") {
                 updateState({ status: "RESETTING", endTime: Date.now() + 8000 });
             }
         });
 
-        await createBtn("Timer5Btn", 0, new BS.Vector4(0.1, 0.8, 0.1, 1), "5S", true, () => {
+        await createBtn("TimerBtn", 1.25, new BS.Vector4(0.1, 0.75, 0.1, 1), "INITIAL TIMER\n7S", true, () => {
             if (!isHost()) return;
-            updateState({ initialCountdown: 5 });
+            let next = 10;
+            if (gameState.initialCountdown === 10) next = 7;
+            else if (gameState.initialCountdown === 7) next = 5;
+            else next = 10;
+            updateState({ initialCountdown: next });
         });
 
-        await createBtn("Timer10Btn", 2.5, new BS.Vector4(0.1, 0.7, 0.1, 1), "10S", true, () => {
-            if (!isHost()) return;
-            updateState({ initialCountdown: 10 });
-        });
-
-        await createBtn("MuteBtn", 5, new BS.Vector4(0.5, 0.2, 0.8, 1), "MUTE", false, async (e) => {
+        await createBtn("MuteBtn", 3.75, new BS.Vector4(0.5, 0.2, 0.8, 1), "MUTE", false, async (e) => {
             isMuted = !isMuted;
             const txt = await (await scene.Find("MuteBtnText")).GetComponent(BS.CT.BanterText);
             if (txt) txt.text = isMuted ? "UNMUTE" : "MUTE";
         });
 
-        await createBtn("ResetBtn", 7.5, new BS.Vector4(0.5, 0.5, 0.5, 1), "RESET", true, () => {
+        await createBtn("ResetBtn", 6.25, new BS.Vector4(0.5, 0.5, 0.5, 1), "RESET", true, () => {
             if (!isHost()) return;
             updateState({ status: "LOBBY", round: 0 });
         });
@@ -355,7 +354,10 @@
         updateVisuals();
 
         const hardTxt = await (await scene.Find("HardModeBtnText"))?.GetComponent(BS.CT.BanterText);
-        if (hardTxt) hardTxt.text = `HARD: ${gameState.hardMode ? "ON" : "OFF"}`;
+        if (hardTxt) hardTxt.text = `HARD MODE\n${gameState.hardMode ? "ON" : "OFF"}`;
+
+        const timerTxt = await (await scene.Find("TimerBtnText"))?.GetComponent(BS.CT.BanterText);
+        if (timerTxt) timerTxt.text = `INITIAL TIMER\n${gameState.initialCountdown}S`;
 
         updateButtonVisibility();
     }
