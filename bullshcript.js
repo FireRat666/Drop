@@ -260,14 +260,16 @@
         for (let x = 0; x < GRID_SIZE; x++) {
             for (let z = 0; z < GRID_SIZE; z++) {
                 tilePromises.push((async (lx, lz) => {
+                    const startPos = new BS.Vector3(lx * TILE_SIZE - offset, 0, lz * TILE_SIZE - offset);
                     const tile = await new BS.GameObject({
                         name: `Tile_${lx}_${lz}`, parent: gridRoot,
-                        localPosition: new BS.Vector3(lx * TILE_SIZE - offset, 0, lz * TILE_SIZE - offset)
+                        localPosition: startPos
                     }).Async();
                     await tile.AddComponent(new BS.BanterBox({ width: TILE_SIZE - 0.1, height: 0.4, depth: TILE_SIZE - 0.1 }));
                     await tile.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(TILE_SIZE - 0.1, 0.4, TILE_SIZE - 0.1) }));
                     const mat = await tile.AddComponent(new BS.BanterMaterial("Standard", "", new BS.Vector4(1, 1, 1, 1), BS.MaterialSide.Front, false, `Tile_${lx}_${lz}`));
-                    tiles.push({ obj: tile, mat: mat, x: lx, z: lz });
+                    const rb = await tile.AddComponent(new BS.BanterRigidbody({ useGravity: true, isKinematic: true }));
+                    tiles.push({ obj: tile, mat: mat, rb: rb, x: lx, z: lz, startPos: startPos });
                 })(x, z));
             }
         }
@@ -334,10 +336,24 @@
     }
 
     function updateVisuals() {
+        const isDropped = gameState.status === "DROPPED";
+        const isResetting = gameState.status === "RESETTING";
+
         tiles.forEach((tile, index) => {
             const colorIdx = Math.floor(seededRandom(gameState.seed + index) * COLORS.length);
             tile.mat.color = COLORS[colorIdx].vec;
-            tile.obj.SetActive(gameState.status !== "DROPPED" || colorIdx === gameState.targetColorIndex);
+
+            if (isDropped) {
+                if (colorIdx !== gameState.targetColorIndex) {
+                    tile.rb.isKinematic = false;
+                }
+            } else if (isResetting) {
+                tile.rb.isKinematic = true;
+                tile.rb.MovePosition(tile.startPos);
+            } else {
+                tile.rb.isKinematic = true;
+                tile.rb.MovePosition(tile.startPos);
+            }
         });
     }
 
