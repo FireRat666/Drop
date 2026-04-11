@@ -364,8 +364,6 @@
         const now = Date.now();
 
         // Survival timer logic
-        // Game is considered "Flowing" if it's in a round OR resetting between rounds.
-        // It is NOT flowing if in LOBBY or the initial pre-game countdown (RESETTING round 0).
         const isGameFlowing = gameState.status === "SHOWING" || gameState.status === "DROPPED" || (gameState.status === "RESETTING" && gameState.round > 0);
 
         if (isLocalInArena && isGameFlowing) {
@@ -374,9 +372,10 @@
                 gameStartTime = now;
                 gameModeAtStart = gameState.hardMode;
             }
-        } else {
+        } else if (!isGameFlowing) {
+            // Only reset the timer if the game explicitly stops or enters initial pre-game reset
             if (gameStartTime !== 0) {
-                console.log(`DROP GAME: Resetting survival timer (Reason: status=${gameState.status}, round=${gameState.round}, inArena=${isLocalInArena})`);
+                console.log(`DROP GAME: Resetting survival timer (Game Stopped)`);
                 gameStartTime = 0;
             }
         }
