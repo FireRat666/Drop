@@ -75,6 +75,25 @@
         return gameState.currentHostUid === scene.localUser.uid;
     };
 
+    // Custom Lerp for Vector3
+    const lerpVector3 = (start, end, t) => {
+        return new BS.Vector3(
+            start.x + (end.x - start.x) * t,
+            start.y + (end.y - start.y) * t,
+            start.z + (end.z - start.z) * t
+        );
+    };
+
+    // Custom Slerp for Quaternion (linear approximation for simplicity)
+    const slerpQuaternion = (start, end, t) => {
+        return new BS.Quaternion(
+            start.x + (end.x - start.x) * t,
+            start.y + (end.y - start.y) * t,
+            start.z + (end.z - start.z) * t,
+            start.w + (end.w - start.w) * t
+        ).NormalizeNew(); // Ensure it remains a unit quaternion
+    };
+
     // --- Initialization ---
     async function init() {
         if (scene) return;
@@ -344,19 +363,31 @@
         const duration = 1000;
         const startTime = Date.now();
 
+        // Capture current transform state before starting interpolation
+        tiles.forEach(tile => {
+            tile.rb.isKinematic = true;
+            tile.rb.velocity = new BS.Vector3(0, 0, 0);
+            tile.rb.angularVelocity = new BS.Vector3(0, 0, 0);
+            tile.currentResetStartPos = tile.obj.position;
+            tile.currentResetStartRot = tile.obj.rotation;
+        });
+
         const animate = () => {
             const now = Date.now();
-            const progress = Math.min(1, (now - startTime) / duration);
+            const elapsed = now - startTime;
+            const progress = Math.min(1, elapsed / duration);
 
             tiles.forEach(tile => {
-                tile.rb.isKinematic = true;
-                tile.rb.velocity = new BS.Vector3(0, 0, 0);
-                tile.rb.angularVelocity = new BS.Vector3(0, 0, 0);
-                tile.rb.MovePosition(tile.initialWorldPos);
-                tile.rb.MoveRotation(tile.initialRotation);
+                // Manual Lerp for world position
+                const newPos = lerpVector3(tile.currentResetStartPos, tile.initialWorldPos, progress);
+                tile.rb.MovePosition(newPos);
+
+                // Manual Slerp (linear approximation) for world rotation
+                const newRot = slerpQuaternion(tile.currentResetStartRot, tile.initialRotation, progress);
+                tile.rb.MoveRotation(newRot);
             });
 
-            if (progress < 1 && (gameState.status === "RESETTING" || gameState.status === "LOBBY" || gameState.status === "SHOWING")) {
+            if (progress < 1 && (gameState.status === "RESETTING" || gameState.status === "LOBBY")) {
                 requestAnimationFrame(animate);
             } else {
                 isResettingSmoothly = false;
