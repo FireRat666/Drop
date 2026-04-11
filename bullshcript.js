@@ -23,7 +23,7 @@
     const TIMINGS = {
         LOBBY: 10,
         SHOWING: 7,
-        DROPPED: 3,
+        DROPPED: 2,
         RESETTING: 3,
         HOST_STEAL_DURATION: 30000
     };
@@ -54,6 +54,7 @@
     let hostDisplay = null;
     let lastFallTime = 0;
     let hostOnlyButtons = [];
+    let isResettingSmoothly = false;
 
     // Local player game session tracking
     let gameStartTime = 0;
@@ -260,16 +261,17 @@
         for (let x = 0; x < GRID_SIZE; x++) {
             for (let z = 0; z < GRID_SIZE; z++) {
                 tilePromises.push((async (lx, lz) => {
-                    const startPos = new BS.Vector3(lx * TILE_SIZE - offset, GAME_HEIGHT, lz * TILE_SIZE - offset); // Use absolute world coordinates for physics!
+                    const initialWorldPos = new BS.Vector3(lx * TILE_SIZE - offset, GAME_HEIGHT, lz * TILE_SIZE - offset);
+                    const initialRotation = new BS.Quaternion(0, 0, 0, 1);
                     const tile = await new BS.GameObject({
                         name: `Tile_${lx}_${lz}`, parent: gridRoot,
-                        localPosition: new BS.Vector3(lx * TILE_SIZE - offset, 0, lz * TILE_SIZE - offset) // Relative to parent for visuals
+                        localPosition: new BS.Vector3(lx * TILE_SIZE - offset, 0, lz * TILE_SIZE - offset)
                     }).Async();
                     await tile.AddComponent(new BS.BanterBox({ width: TILE_SIZE - 0.1, height: 0.4, depth: TILE_SIZE - 0.1 }));
                     await tile.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(TILE_SIZE - 0.1, 0.4, TILE_SIZE - 0.1) }));
                     const mat = await tile.AddComponent(new BS.BanterMaterial("Standard", "", new BS.Vector4(1, 1, 1, 1), BS.MaterialSide.Front, false, `Tile_${lx}_${lz}`));
                     const rb = await tile.AddComponent(new BS.BanterRigidbody({ useGravity: true, isKinematic: true }));
-                    tiles.push({ obj: tile, mat: mat, rb: rb, x: lx, z: lz, startPos: startPos });
+                    tiles.push({ obj: tile, mat: mat, rb: rb, x: lx, z: lz, initialWorldPos: initialWorldPos, initialRotation: initialRotation });
                 })(x, z));
             }
         }
@@ -335,9 +337,37 @@
         hostOnlyButtons.forEach(btn => btn.SetActive(userIsHost));
     }
 
+    function startSmoothReset() {
+        if (isResettingSmoothly) return;
+        isResettingSmoothly = true;
+
+        const duration = 1000;
+        const startTime = Date.now();
+
+        const animate = () => {
+            const now = Date.now();
+            const progress = Math.min(1, (now - startTime) / duration);
+
+            tiles.forEach(tile => {
+                tile.rb.isKinematic = true;
+                tile.rb.velocity = new BS.Vector3(0, 0, 0);
+                tile.rb.angularVelocity = new BS.Vector3(0, 0, 0);
+                tile.rb.MovePosition(tile.initialWorldPos);
+                tile.rb.MoveRotation(tile.initialRotation);
+            });
+
+            if (progress < 1 && (gameState.status === "RESETTING" || gameState.status === "LOBBY" || gameState.status === "SHOWING")) {
+                requestAnimationFrame(animate);
+            } else {
+                isResettingSmoothly = false;
+            }
+        };
+        requestAnimationFrame(animate);
+    }
+
     function updateVisuals() {
         const isDropped = gameState.status === "DROPPED";
-        const isResetting = gameState.status === "RESETTING";
+        const isResetting = gameState.status === "RESETTING" || gameState.status === "LOBBY";
 
         tiles.forEach((tile, index) => {
             const colorIdx = Math.floor(seededRandom(gameState.seed + index) * COLORS.length);
@@ -347,14 +377,12 @@
                 if (colorIdx !== gameState.targetColorIndex) {
                     tile.rb.isKinematic = false;
                 }
-            } else if (isResetting) {
-                tile.rb.isKinematic = true;
-                tile.rb.MovePosition(tile.startPos);
-            } else {
-                tile.rb.isKinematic = true;
-                tile.rb.MovePosition(tile.startPos);
             }
         });
+
+        if (isResetting) {
+            startSmoothReset();
+        }
     }
 
     function updateScoreboard() {
