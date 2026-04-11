@@ -134,7 +134,7 @@
         const hostObj = await new BS.GameObject({ name: "HostDisplay", parent: floor, localPosition: new BS.Vector3(0, 3.5, 12), localEulerAngles: new BS.Vector3(0, 0, 0) }).Async();
         hostDisplay = await hostObj.AddComponent(new BS.BanterText({
             text: "Waiting for Unity...",
-            fontSize: 3,
+            fontSize: 5,
             color: new BS.Vector4(1, 1, 0, 1),
             horizontalAlignment: BS.HorizontalAlignment.Center
         }));
