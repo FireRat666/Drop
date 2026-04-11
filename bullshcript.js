@@ -75,23 +75,24 @@
         return gameState.currentHostUid === scene.localUser.uid;
     };
 
-    // Custom Lerp for Vector3
-    const lerpVector3 = (start, end, t) => {
-        return new BS.Vector3(
-            start.x + (end.x - start.x) * t,
-            start.y + (end.y - start.y) * t,
-            start.z + (end.z - start.z) * t
-        );
-    };
+    // Manual Lerp for Vector3
+    const lerpVec3 = (a, b, t) => ({
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        z: a.z + (b.z - a.z) * t
+    });
 
-    // Custom Slerp for Quaternion (linear approximation for simplicity)
-    const slerpQuaternion = (start, end, t) => {
-        return new BS.Quaternion(
-            start.x + (end.x - start.x) * t,
-            start.y + (end.y - start.y) * t,
-            start.z + (end.z - start.z) * t,
-            start.w + (end.w - start.w) * t
-        ).NormalizeNew(); // Ensure it remains a unit quaternion
+    // Manual Slerp (linear approximation) for Quaternion
+    const lerpQuat = (a, b, t) => {
+        const res = {
+            x: a.x + (b.x - a.x) * t,
+            y: a.y + (b.y - a.y) * t,
+            z: a.z + (b.z - a.z) * t,
+            w: a.w + (b.w - a.w) * t
+        };
+        const len = Math.sqrt(res.x * res.x + res.y * res.y + res.z * res.z + res.w * res.w);
+        res.x /= len; res.y /= len; res.z /= len; res.w /= len;
+        return res;
     };
 
     // --- Initialization ---
@@ -280,8 +281,8 @@
         for (let x = 0; x < GRID_SIZE; x++) {
             for (let z = 0; z < GRID_SIZE; z++) {
                 tilePromises.push((async (lx, lz) => {
-                    const initialWorldPos = new BS.Vector3(lx * TILE_SIZE - offset, GAME_HEIGHT, lz * TILE_SIZE - offset);
-                    const initialRotation = new BS.Quaternion(0, 0, 0, 1);
+                    const initialWorldPos = { x: lx * TILE_SIZE - offset, y: GAME_HEIGHT, z: lz * TILE_SIZE - offset };
+                    const initialRotation = { x: 0, y: 0, z: 0, w: 1 };
                     const tile = await new BS.GameObject({
                         name: `Tile_${lx}_${lz}`, parent: gridRoot,
                         localPosition: new BS.Vector3(lx * TILE_SIZE - offset, 0, lz * TILE_SIZE - offset)
@@ -366,25 +367,26 @@
         // Capture current transform state before starting interpolation
         tiles.forEach(tile => {
             tile.rb.isKinematic = true;
-            tile.rb.velocity = new BS.Vector3(0, 0, 0);
-            tile.rb.angularVelocity = new BS.Vector3(0, 0, 0);
-            tile.currentResetStartPos = tile.obj.position;
-            tile.currentResetStartRot = tile.obj.rotation;
+            tile.rb.velocity = { x: 0, y: 0, z: 0 };
+            tile.rb.angularVelocity = { x: 0, y: 0, z: 0 };
+            const p = tile.obj.position;
+            const r = tile.obj.rotation;
+            tile.resetStartPos = { x: p.x, y: p.y, z: p.z };
+            tile.resetStartRot = { x: r.x, y: r.y, z: r.z, w: r.w };
         });
 
         const animate = () => {
-            const now = Date.now();
-            const elapsed = now - startTime;
+            const elapsed = Date.now() - startTime;
             const progress = Math.min(1, elapsed / duration);
 
             tiles.forEach(tile => {
-                // Manual Lerp for world position
-                const newPos = lerpVector3(tile.currentResetStartPos, tile.initialWorldPos, progress);
-                tile.rb.MovePosition(newPos);
+                if (!tile.resetStartPos) return;
 
-                // Manual Slerp (linear approximation) for world rotation
-                const newRot = slerpQuaternion(tile.currentResetStartRot, tile.initialRotation, progress);
-                tile.rb.MoveRotation(newRot);
+                const pos = lerpVec3(tile.resetStartPos, tile.initialWorldPos, progress);
+                tile.rb.MovePosition(new BS.Vector3(pos.x, pos.y, pos.z));
+
+                const rot = lerpQuat(tile.resetStartRot, tile.initialRotation, progress);
+                tile.rb.MoveRotation(new BS.Quaternion(rot.x, rot.y, rot.z, rot.w));
             });
 
             if (progress < 1 && (gameState.status === "RESETTING" || gameState.status === "LOBBY")) {
