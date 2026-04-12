@@ -162,7 +162,7 @@
         }));
 
         // Scoreboard
-        const boardRoot = await new BS.GameObject({ name: "Scoreboards", parent: floor, localPosition: new BS.Vector3(12, 3, 0), localEulerAngles: new BS.Vector3(0, 90, 0) }).Async();
+        const boardRoot = await new BS.GameObject({ name: "Scoreboards", parent: floor, localPosition: new BS.Vector3(12, 2, 0), localEulerAngles: new BS.Vector3(0, 90, 0) }).Async();
         const createBoard = async (name, x, label) => {
             const obj = await new BS.GameObject({ name: name, parent: boardRoot, localPosition: new BS.Vector3(x, 0, 0) }).Async();
             return await obj.AddComponent(new BS.BanterText({
