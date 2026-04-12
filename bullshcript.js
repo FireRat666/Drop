@@ -591,8 +591,8 @@
     }
 
     function updateState(patch) {
-        const next = { ...gameState, ...patch };
-        scene.SetPublicSpaceProps({ [STATE_KEY]: JSON.stringify(next) });
+        Object.assign(gameState, patch);
+        scene.SetPublicSpaceProps({ [STATE_KEY]: JSON.stringify(gameState) });
     }
 
     if (window.BS) init();
