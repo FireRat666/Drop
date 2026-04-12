@@ -55,6 +55,7 @@
     let lastFallTime = 0;
     let hostOnlyButtons = [];
     let isResettingSmoothly = false;
+    let lastHostActionTime = 0;
 
     // Local player game session tracking
     let gameStartTime = 0;
@@ -335,9 +336,11 @@
             updateScoreboard();
         });
         scene.On("user-left", (e) => {
-            if (isHost() && e.detail.uid === gameState.currentHostUid) {
+            if (e.detail.uid === gameState.currentHostUid) {
                 const uids = Object.keys(scene.users).filter(id => id !== e.detail.uid).sort();
-                if (uids.length > 0) updateState({ currentHostUid: uids[0], hostStealStartTime: 0, hostStealRequesterUid: null });
+                if (uids.length > 0 && uids[0] === scene.localUser.uid) {
+                    updateState({ currentHostUid: scene.localUser.uid, hostStealStartTime: 0, hostStealRequesterUid: null });
+                }
             }
             if (isHost() && e.detail.uid === gameState.hostStealRequesterUid) {
                 updateState({ hostStealStartTime: 0, hostStealRequesterUid: null });
@@ -556,6 +559,11 @@
         }
 
         if (now < gameState.endTime) return;
+
+        // Prevent update spam by acting as a transaction lock if the host has poor internet
+        if (now - lastHostActionTime < 1000) return;
+        lastHostActionTime = now;
+
         if (gameState.status === "SHOWING") updateState({ status: "DROPPED", endTime: now + (TIMINGS.DROPPED * 1000) });
         else if (gameState.status === "DROPPED") {
             const nextSeed = gameState.hardMode ? Math.floor(Math.random() * 999999) : gameState.seed;
