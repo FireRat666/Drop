@@ -494,6 +494,12 @@
     function update() {
         const now = Date.now();
 
+        if (gameState.hostStealStartTime > 0 && gameState.hostStealRequesterUid === scene.localUser?.uid) {
+            if (now - gameState.hostStealStartTime >= TIMINGS.HOST_STEAL_DURATION) {
+                updateState({ currentHostUid: scene.localUser.uid, hostStealStartTime: 0, hostStealRequesterUid: null });
+            }
+        }
+
         // Survival timer logic
         const isGameFlowing = gameState.status === "SHOWING" || gameState.status === "DROPPED" || (gameState.status === "RESETTING" && gameState.round > 0);
 
@@ -552,12 +558,6 @@
     }
 
     function driveHostLogic(now) {
-        if (gameState.hostStealStartTime > 0) {
-            if (now - gameState.hostStealStartTime >= TIMINGS.HOST_STEAL_DURATION) {
-                updateState({ currentHostUid: gameState.hostStealRequesterUid, hostStealStartTime: 0, hostStealRequesterUid: null });
-            }
-        }
-
         if (now < gameState.endTime) return;
 
         // Prevent update spam by acting as a transaction lock if the host has poor internet
