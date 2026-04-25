@@ -76,26 +76,6 @@
         return gameState.currentHostUid === scene.localUser.uid;
     };
 
-    // Manual Lerp for Vector3
-    const lerpVec3 = (a, b, t) => ({
-        x: a.x + (b.x - a.x) * t,
-        y: a.y + (b.y - a.y) * t,
-        z: a.z + (b.z - a.z) * t
-    });
-
-    // Manual Slerp (linear approximation) for Quaternion
-    const lerpQuat = (a, b, t) => {
-        const res = {
-            x: a.x + (b.x - a.x) * t,
-            y: a.y + (b.y - a.y) * t,
-            z: a.z + (b.z - a.z) * t,
-            w: a.w + (b.w - a.w) * t
-        };
-        const len = Math.sqrt(res.x * res.x + res.y * res.y + res.z * res.z + res.w * res.w);
-        res.x /= len; res.y /= len; res.z /= len; res.w /= len;
-        return res;
-    };
-
     // --- Initialization ---
     async function init() {
         if (scene) return;
@@ -206,12 +186,17 @@
 
         await createBtn("ClaimHostBtn", -3.75, new BS.Vector4(1, 0.8, 0, 1), "CLAIM HOST", false, () => {
             const hostPresent = gameState.currentHostUid && scene.users[gameState.currentHostUid];
+            const now = Date.now();
+
             if (!hostPresent) {
+                // If no host, assign the local user instantly. This is the primary mechanism to prevent stalling.
                 updateState({ currentHostUid: scene.localUser.uid, hostStealStartTime: 0, hostStealRequesterUid: null });
             } else if (gameState.currentHostUid === scene.localUser.uid) {
+                // Already host, just cancel any existing steal timer
                 updateState({ hostStealStartTime: 0, hostStealRequesterUid: null });
             } else {
-                updateState({ hostStealStartTime: Date.now(), hostStealRequesterUid: scene.localUser.uid });
+                // Host exists and is different user: Initiate standard host steal countdown
+                updateState({ hostStealStartTime: now, hostStealRequesterUid: scene.localUser.uid });
             }
         });
 
@@ -219,6 +204,11 @@
             scene.TeleportTo(new BS.Vector3(0, GAME_HEIGHT + 2, 0), 0, true);
             if (gameState.status === "LOBBY") {
                 updateState({ status: "RESETTING", endTime: Date.now() + 8000 });
+            }
+            const hostPresent = gameState.currentHostUid && scene.users[gameState.currentHostUid];
+            if (!hostPresent) {
+                // If no host, assign the local user instantly. This is the primary mechanism to prevent stalling.
+                updateState({ currentHostUid: scene.localUser.uid, hostStealStartTime: 0, hostStealRequesterUid: null });
             }
         });
 
@@ -271,6 +261,11 @@
                 }
             }
         });
+
+        // Invisible Landing Collider
+        const landingCollider = await new BS.GameObject({ name: "LandingCollider", localPosition: new BS.Vector3(0, GAME_HEIGHT - 10, 0) }).Async();
+        await landingCollider.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(GRID_SIZE * TILE_SIZE, 0.5, GRID_SIZE * TILE_SIZE) }));
+        // await landingCollider.AddComponent(new BS.BanterMaterial({ shaderName: "Standard", color: new BS.Vector4(1, 1, 1, 1) }));
     }
 
     async function buildGrid() {
@@ -310,10 +305,10 @@
         const uiAnchor = await new BS.GameObject({ name: "UIAnchor", localPosition: new BS.Vector3(0, GAME_HEIGHT + 12, 0) }).Async();
         const createDisplay = async (name, pos, rot) => {
             const panel = await new BS.GameObject({ name: name, parent: uiAnchor, localPosition: pos, localEulerAngles: rot }).Async();
-            const textObj = await new BS.GameObject({ name: "Label", parent: panel, localPosition: new BS.Vector3(0, 4, 0) }).Async();
+            const textObj = await new BS.GameObject({ name: "Label", parent: panel, localPosition: new BS.Vector3(0, 0, 0) }).Async();
             const textComp = await textObj.AddComponent(new BS.BanterText({ text: "DROP GAME", fontSize: 12, color: new BS.Vector4(1, 1, 1, 1), horizontalAlignment: BS.HorizontalAlignment.Center }));
-            const cube = await new BS.GameObject({ name: "ColorCube", parent: panel, localPosition: new BS.Vector3(0, -1, 0) }).Async();
-            await cube.AddComponent(new BS.BanterBox({ width: 5, height: 5, depth: 5 }));
+            const cube = await new BS.GameObject({ name: "ColorCube", parent: panel, localPosition: new BS.Vector3(0, -5, 0) }).Async();
+            await cube.AddComponent(new BS.BanterPlane({ width: 15, height: 5 }));
             const mat = await cube.AddComponent(new BS.BanterMaterial({ shaderName: "Standard", color: new BS.Vector4(1, 1, 1, 1) }));
             return { text: textComp, mat: mat, cube: cube };
         };
@@ -509,7 +504,17 @@
                 gameStartTime = now;
                 gameModeAtStart = gameState.hardMode;
             }
-        } else if (!isGameFlowing) {
+            const hostPresent = gameState.currentHostUid && scene.users[gameState.currentHostUid];
+            if (!hostPresent) {
+                // If no host, assign temporary host by lowest UID.
+                const allUsers = Object.keys(scene.users || {}).sort();
+                if (allUsers.length === 0) return;
+                const lowestUid = allUsers[0];
+                if (!scene.users[lowestUid]) { return; } // Cannot assign host
+                console.log(`DROP GAME: No host found in LOBBY. Enforcing temporary host by lowest UID: ${lowestUid}`);
+                updateState({ currentHostUid: lowestUid, hostStealStartTime: 0, hostStealRequesterUid: null });
+            }
+        } else if (!isGameFlowing || (gameState.status === "LOBBY" && gameStartTime !== 0)) {
             // Only reset the timer if the game explicitly stops or enters initial pre-game reset
             if (gameStartTime !== 0) {
                 console.log(`DROP GAME: Resetting survival timer (Game Stopped)`);
