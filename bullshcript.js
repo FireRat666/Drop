@@ -98,6 +98,7 @@
         await buildGrid();
         await setupUI();
         await setupAudio();
+        await createPerformantAnimatedSkybox();
 
         if (!scene.unityLoaded) {
             console.log("DROP GAME: Waiting for Unity...");
@@ -598,6 +599,59 @@
     function updateState(patch) {
         Object.assign(gameState, patch);
         scene.SetPublicSpaceProps({ [STATE_KEY]: JSON.stringify(gameState) });
+    }
+
+    async function createPerformantAnimatedSkybox() {
+        const scene = BS.BanterScene.GetInstance();
+        
+        const skyboxRoot = await new BS.GameObject({ name: "AnimatedSkybox" }).Async();
+        const rootTransform = await skyboxRoot.AddComponent(new BS.Transform());
+        // --- Outer Sphere (Solid Background) ---
+        const outerSphere = await new BS.GameObject({ name: "OuterSky", parent: skyboxRoot}).Async();
+        await outerSphere.AddComponent(new BS.BanterSphere({ radius: 400}));
+        await outerSphere.AddComponent(new BS.BanterInvertedMesh());
+        await outerSphere.AddComponent(new BS.BanterMaterial({
+            shaderName: "Unlit/Diffuse", 
+            texture: "https://images.hdqwalls.com/wallpapers/skybox-4k-zc.jpg", 
+            color: new BS.Vector4(1, 1, 1, 1),
+            side: BS.MaterialSide.Front
+        }));
+        const outerTransform = await outerSphere.AddComponent(new BS.Transform());
+        // --- Inner Sphere (Transparent Overlay) ---
+        const innerSphere = await new BS.GameObject({ name: "InnerSky", parent: skyboxRoot}).Async();
+        // Slightly smaller radius to avoid Z-fighting
+        await innerSphere.AddComponent(new BS.BanterSphere({ radius: 390}));
+        await innerSphere.AddComponent(new BS.BanterInvertedMesh());
+        await innerSphere.AddComponent(new BS.BanterMaterial({
+            // Use a transparent unlit shader. "Sprites/Default" or "Unlit/Transparent" usually work well in Unity/Banter.
+            shaderName: "Unlit/Transparent", 
+            texture: "https://clipground.com/images/white-stars-png-10.png",
+            color: new BS.Vector4(1, 1, 1, 0.8), // Slight tint/transparency
+            side: BS.MaterialSide.Front
+        }));
+        const innerTransform = await innerSphere.AddComponent(new BS.Transform());
+        // --- The Animation Loop ---
+        let outerRotY = 0;
+        let innerRotX = 0;
+        let innerRotY = 0;
+        
+        function animate() {
+            // Different rotation speeds and axes create the shifting effect
+            outerRotY += 0.001;
+            innerRotX += 0.0005;
+            innerRotY -= 0.0015;
+            
+            // Wrap angles to prevent floating point imprecision over hours
+            if (outerRotY >= 360) outerRotY -= 360;
+            if (innerRotX >= 360) innerRotX -= 360;
+            if (innerRotY <= -360) innerRotY += 360;
+            // Apply rotations
+            outerTransform.localEulerAngles = new BS.Vector3(0, outerRotY, 0);
+            innerTransform.localEulerAngles = new BS.Vector3(innerRotX, innerRotY, 0);
+            requestAnimationFrame(animate);
+        }
+        // Start the loop
+        animate();
     }
 
     if (window.BS) init();
