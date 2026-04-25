@@ -4,8 +4,8 @@
     // --- Configuration ---
     const STATE_KEY = "drop_game_state";
     const USER_DATA_KEY_PREFIX = "cd_user:";
-    const GRID_SIZE = 8;
-    const TILE_SIZE = 3;
+    let GRID_SIZE = 8;
+    let TILE_SIZE = 3;
     const GAME_HEIGHT = 10;
     const LOBBY_POS_RAW = { x: 0, y: 10.1, z: -40 };
 
@@ -36,6 +36,7 @@
         seed: 0,
         endTime: 0,
         hardMode: false,
+        gridMode: 'normal',
         initialCountdown: 7,
         activePlayers: 0,
         currentHostUid: null,
@@ -68,11 +69,19 @@
         muteBtn: null,
         timerBtn: null,
         hardModeBtn: null,
+        boardSizeBtn: null,
         hostDisplay: null,
         leaderboardContent: null,
         leaderboardPageInfo: null,
         hostOnlyButtons: [],
         tabs: {}
+    };
+
+    let currentGridMode = 'normal';
+    let environmentElements = {
+        arenaTracker: null,
+        landingCollider: null,
+        gridRoot: null
     };
 
     // Local player game session tracking
@@ -157,6 +166,7 @@
 
         // Arena Tracker
         const arenaTracker = await new BS.GameObject({ name: "ArenaTracker", localPosition: new BS.Vector3(0, GAME_HEIGHT + 2, 0) }).Async();
+        environmentElements.arenaTracker = arenaTracker;
         await arenaTracker.AddComponent(new BS.BoxCollider({ isTrigger: true, size: new BS.Vector3(GRID_SIZE * TILE_SIZE, 5, GRID_SIZE * TILE_SIZE) }));
         await arenaTracker.AddComponent(new BS.BanterColliderEvents());
         arenaTracker.On("trigger-enter", (e) => {
@@ -187,6 +197,7 @@
 
         // Invisible Landing Collider
         const landingCollider = await new BS.GameObject({ name: "LandingCollider", localPosition: new BS.Vector3(0, GAME_HEIGHT - 10, 0) }).Async();
+        environmentElements.landingCollider = landingCollider;
         await landingCollider.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(GRID_SIZE * TILE_SIZE, 0.5, GRID_SIZE * TILE_SIZE) }));
         // await landingCollider.AddComponent(new BS.BanterMaterial({ shaderName: "Standard", color: new BS.Vector4(1, 1, 1, 1) }));
     }
@@ -293,7 +304,11 @@
                 paddingLeft: '15px'
             });
             
-            btn.OnClick(handler);
+            btn.OnClick(() => {
+                btn.SetStyles({ backgroundColor: '#555555' });
+                setTimeout(() => btn.SetStyles({ backgroundColor: color }), 150);
+                handler();
+            });
 
             if (isHostOnly) {
                 uiElements.hostOnlyButtons.push(btn);
@@ -304,6 +319,11 @@
         uiElements.hardModeBtn = await createUIButton("HARD MODE", '#cc1111', true, () => {
             if (!isHost()) return;
             updateState({ hardMode: !gameState.hardMode });
+        });
+
+        uiElements.boardSizeBtn = await createUIButton("BOARD SIZE\nNORMAL", '#1180cc', true, () => {
+            if (!isHost() || gameState.status !== "LOBBY") return;
+            updateState({ gridMode: gameState.gridMode === 'normal' ? 'small' : 'normal' });
         });
 
         await createUIButton("CLAIM HOST", '#e69900', false, () => {
@@ -488,7 +508,11 @@
     }
 
     async function buildGrid() {
+        if (environmentElements.gridRoot) {
+            environmentElements.gridRoot.Destroy();
+        }
         const gridRoot = await new BS.GameObject({ name: "GridRoot", localPosition: new BS.Vector3(0, GAME_HEIGHT, 0) }).Async();
+        environmentElements.gridRoot = gridRoot;
         const offset = (GRID_SIZE * TILE_SIZE) / 2 - (TILE_SIZE / 2);
         const tilePromises = [];
 
@@ -569,6 +593,35 @@
         if (!raw) return;
         gameState = JSON.parse(raw);
         updateVisuals();
+
+        if (gameState.gridMode && gameState.gridMode !== currentGridMode) {
+            currentGridMode = gameState.gridMode;
+            if (currentGridMode === 'small') {
+                GRID_SIZE = 16;
+                TILE_SIZE = 2;
+            } else {
+                GRID_SIZE = 8;
+                TILE_SIZE = 3;
+            }
+
+            tiles.forEach(t => t.obj.Destroy());
+            tiles = [];
+            await buildGrid();
+
+            const newSize = GRID_SIZE * TILE_SIZE;
+            if (environmentElements.arenaTracker) {
+                const col = await environmentElements.arenaTracker.GetComponent(BS.CT.BoxCollider);
+                if (col) col.size = new BS.Vector3(newSize, 5, newSize);
+            }
+            if (environmentElements.landingCollider) {
+                const col = await environmentElements.landingCollider.GetComponent(BS.CT.BoxCollider);
+                if (col) col.size = new BS.Vector3(newSize, 0.5, newSize);
+            }
+        }
+
+        if (uiElements.boardSizeBtn) {
+            uiElements.boardSizeBtn.text = `BOARD SIZE\n${gameState.gridMode === 'small' ? 'SMALL' : 'NORMAL'}`;
+        }
 
         if (uiElements.hardModeBtn) {
             uiElements.hardModeBtn.text = `HARD MODE\n${gameState.hardMode ? "ON" : "OFF"}`;
