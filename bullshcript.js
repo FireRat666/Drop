@@ -381,7 +381,7 @@
             localEulerAngles: new BS.Vector3(0, 90, 0) 
         }).Async();
 
-        const panel = await boardObj.AddComponent(new BS.BanterUI(new BS.Vector2(500, 420), false));
+        const panel = await boardObj.AddComponent(new BS.BanterUI(new BS.Vector2(500, 450), false));
         const root = panel.CreateVisualElement();
         await root.Async();
         root.SetStyles({
