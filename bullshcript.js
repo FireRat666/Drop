@@ -57,6 +57,24 @@
     let isResettingSmoothly = false;
     let lastHostActionTime = 0;
 
+    // UI State
+    let uiState = {
+        leaderboardTab: 'falls', // 'falls', 'normal', 'hard'
+        leaderboardPage: 0,
+        playersPerPage: 10
+    };
+
+    let uiElements = {
+        muteBtn: null,
+        timerBtn: null,
+        hardModeBtn: null,
+        hostDisplay: null,
+        leaderboardContent: null,
+        leaderboardPageInfo: null,
+        hostOnlyButtons: [],
+        tabs: {}
+    };
+
     // Local player game session tracking
     let gameStartTime = 0;
     let gameModeAtStart = false;
@@ -124,114 +142,18 @@
         await floor.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(30, 0.5, 30) }));
         await floor.AddComponent(new BS.BanterMaterial({ shaderName: "Standard", color: new BS.Vector4(0.1, 0.1, 0.1, 1) }));
 
-        // Rules Text
-        const rulesObj = await new BS.GameObject({ name: "RulesText", parent: floor, localPosition: new BS.Vector3(-12, 2, 0), localEulerAngles: new BS.Vector3(0, -90, 0) }).Async();
-        await rulesObj.AddComponent(new BS.BanterText({
-            text: "<size=1.5><b>HOW TO PLAY</b></size>\n\n1. Click <b>JOIN GAME</b> to teleport.\n2. Look at the displays for the <b>TARGET COLOR</b>.\n3. Stand on a matching tile before time runs out.\n4. All other tiles will drop!\n5. Survive as long as you can.\n\n<color=#ffcc00>Hard Mode: Randomizes board every round!</color>",
-            fontSize: 1,
-            color: new BS.Vector4(1, 1, 1, 1),
-            horizontalAlignment: BS.HorizontalAlignment.Left
-        }));
-
-        // Host Display
+        // Host Display above the controls
         const hostObj = await new BS.GameObject({ name: "HostDisplay", parent: floor, localPosition: new BS.Vector3(0, 3.5, 12), localEulerAngles: new BS.Vector3(0, 0, 0) }).Async();
-        hostDisplay = await hostObj.AddComponent(new BS.BanterText({
+        uiElements.hostDisplay = await hostObj.AddComponent(new BS.BanterText({
             text: "Waiting for Unity...",
             fontSize: 5,
             color: new BS.Vector4(1, 1, 0, 1),
             horizontalAlignment: BS.HorizontalAlignment.Center
         }));
 
-        // Scoreboard
-        const boardRoot = await new BS.GameObject({ name: "Scoreboards", parent: floor, localPosition: new BS.Vector3(12, 2, 0), localEulerAngles: new BS.Vector3(0, 90, 0) }).Async();
-        const createBoard = async (name, x, label) => {
-            const obj = await new BS.GameObject({ name: name, parent: boardRoot, localPosition: new BS.Vector3(x, 0, 0) }).Async();
-            return await obj.AddComponent(new BS.BanterText({
-                text: `<b>${label}</b>\n\nWaiting...`,
-                fontSize: 0.5,
-                color: new BS.Vector4(1, 1, 1, 1),
-                horizontalAlignment: BS.HorizontalAlignment.Center
-            }));
-        };
-        scoreboardFalls = await createBoard("FallsBoard", -6, "MOST FALLS");
-        scoreboardNormal = await createBoard("NormalBoard", 0, "NORMAL SURVIVAL");
-        scoreboardHard = await createBoard("HardBoard", 6, "HARD SURVIVAL");
-
-        // Controls
-        const buttonGroup = await new BS.GameObject({ name: "Controls", parent: floor, localPosition: new BS.Vector3(0, 1, 3) }).Async();
-        const createBtn = async (name, xPos, color, text, hostOnly, handler) => {
-            const btn = await new BS.GameObject({ name: name, parent: buttonGroup, localPosition: new BS.Vector3(xPos, 0, 0) }).Async();
-            await btn.AddComponent(new BS.BanterBox({ width: 1, height: 0.4, depth: 0.5 }));
-            await btn.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(1, 0.4, 0.5) }));
-            const mat = await btn.AddComponent(new BS.BanterMaterial({ shaderName: "Standard", color: color }));
-            btn.SetLayer(5);
-            const t = await new BS.GameObject({ name: name + "Text", parent: btn, localPosition: new BS.Vector3(0, 0.4, 0) }).Async();
-            await t.AddComponent(new BS.BanterText({ text: text, fontSize: 1.5, color: new BS.Vector4(1, 1, 1, 1), horizontalAlignment: BS.HorizontalAlignment.Center }));
-
-            btn.On("click", async () => {
-                // Visual feedback
-                const pressedColor = new BS.Vector4(color.x * 0.5, color.y * 0.5, color.z * 0.5, color.w);
-                mat.color = pressedColor;
-                setTimeout(() => { mat.color = color; }, 200);
-                handler();
-            });
-
-            if (hostOnly) hostOnlyButtons.push(btn);
-            return btn;
-        };
-
-        await createBtn("HardModeBtn", -6.25, new BS.Vector4(0.8, 0.1, 0.1, 1), "HARD MODE", true, () => {
-            if (!isHost()) return;
-            updateState({ hardMode: !gameState.hardMode });
-        });
-
-        await createBtn("ClaimHostBtn", -3.75, new BS.Vector4(1, 0.8, 0, 1), "CLAIM HOST", false, () => {
-            const hostPresent = gameState.currentHostUid && scene.users[gameState.currentHostUid];
-            const now = Date.now();
-
-            if (!hostPresent) {
-                // If no host, assign the local user instantly. This is the primary mechanism to prevent stalling.
-                updateState({ currentHostUid: scene.localUser.uid, hostStealStartTime: 0, hostStealRequesterUid: null });
-            } else if (gameState.currentHostUid === scene.localUser.uid) {
-                // Already host, just cancel any existing steal timer
-                updateState({ hostStealStartTime: 0, hostStealRequesterUid: null });
-            } else {
-                // Host exists and is different user: Initiate standard host steal countdown
-                updateState({ hostStealStartTime: now, hostStealRequesterUid: scene.localUser.uid });
-            }
-        });
-
-        await createBtn("JoinBtn", -1.25, new BS.Vector4(0, 0.5, 1, 1), "JOIN GAME", false, () => {
-            scene.TeleportTo(new BS.Vector3(0, GAME_HEIGHT + 2, 0), 0, true);
-            if (gameState.status === "LOBBY") {
-                updateState({ status: "RESETTING", endTime: Date.now() + 8000 });
-            }
-            const hostPresent = gameState.currentHostUid && scene.users[gameState.currentHostUid];
-            if (!hostPresent) {
-                // If no host, assign the local user instantly. This is the primary mechanism to prevent stalling.
-                updateState({ currentHostUid: scene.localUser.uid, hostStealStartTime: 0, hostStealRequesterUid: null });
-            }
-        });
-
-        await createBtn("TimerBtn", 1.25, new BS.Vector4(0.1, 0.75, 0.1, 1), "INITIAL TIMER\n7S", true, () => {
-            if (!isHost()) return;
-            let next = 10;
-            if (gameState.initialCountdown === 10) next = 7;
-            else if (gameState.initialCountdown === 7) next = 5;
-            else next = 10;
-            updateState({ initialCountdown: next });
-        });
-
-        await createBtn("MuteBtn", 3.75, new BS.Vector4(0.5, 0.2, 0.8, 1), "MUTE", false, async (e) => {
-            isMuted = !isMuted;
-            const txt = await (await scene.Find("MuteBtnText")).GetComponent(BS.CT.BanterText);
-            if (txt) txt.text = isMuted ? "UNMUTE" : "MUTE";
-        });
-
-        await createBtn("ResetBtn", 6.25, new BS.Vector4(0.5, 0.5, 0.5, 1), "RESET", true, () => {
-            if (!isHost()) return;
-            updateState({ status: "LOBBY", round: 0 });
-        });
+        await buildRulesUI(floor);
+        await buildControlsUI(floor);
+        await buildLeaderboardUI(floor);
 
         // Arena Tracker
         const arenaTracker = await new BS.GameObject({ name: "ArenaTracker", localPosition: new BS.Vector3(0, GAME_HEIGHT + 2, 0) }).Async();
@@ -267,6 +189,302 @@
         const landingCollider = await new BS.GameObject({ name: "LandingCollider", localPosition: new BS.Vector3(0, GAME_HEIGHT - 10, 0) }).Async();
         await landingCollider.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(GRID_SIZE * TILE_SIZE, 0.5, GRID_SIZE * TILE_SIZE) }));
         // await landingCollider.AddComponent(new BS.BanterMaterial({ shaderName: "Standard", color: new BS.Vector4(1, 1, 1, 1) }));
+    }
+
+    async function buildRulesUI(parent) {
+        const rulesObj = await new BS.GameObject({ 
+            name: "RulesUI", 
+            parent: parent, 
+            localPosition: new BS.Vector3(-12, 2.5, 0), 
+            localEulerAngles: new BS.Vector3(0, -90, 0) 
+        }).Async();
+        
+        const panel = await rulesObj.AddComponent(new BS.BanterUI(new BS.Vector2(400, 360), false));
+        const root = panel.CreateVisualElement();
+        await root.Async();
+        root.SetStyles({
+            width: '100%',
+            height: '100%',
+            backgroundColor: '#1a1c29',
+            display: 'flex',
+            flexDirection: 'column',
+            paddingTop: '20px',
+            paddingRight: '20px',
+            paddingBottom: '20px',
+            paddingLeft: '20px',
+            borderTopLeftRadius: '10px',
+            borderTopRightRadius: '10px',
+            borderBottomRightRadius: '10px',
+            borderBottomLeftRadius: '10px'
+        });
+
+        const title = panel.CreateLabel(undefined, root);
+        await title.Async();
+        title.text = 'HOW TO PLAY';
+        title.SetStyles({
+            fontSize: '28px',
+            color: '#ffcc00',
+            backgroundColor: 'rgba(0,0,0,0)',
+            marginBottom: '16px',
+            unityFontStyleAndWeight: 'bold' // Though unity* props were warned about, Banter docs sometimes use them. If it breaks, we remove it. Wait, the user specifically said: "Never use unity* properties — all cause SetStyles to abort." So we omit it!
+        });
+        
+        // Remove unityFontStyleAndWeight
+        title.SetStyles({
+            fontSize: '28px',
+            color: '#ffcc00',
+            backgroundColor: 'rgba(0,0,0,0)',
+            marginBottom: '16px'
+        });
+
+        const body = panel.CreateLabel(undefined, root);
+        await body.Async();
+        body.text = "1. Click JOIN GAME to teleport.\n2. Look at the displays for the TARGET COLOR.\n3. Stand on a matching tile before time runs out.\n4. All other tiles will drop!\n5. Survive as long as you can.\n\nHard Mode: Randomizes board every round!";
+        body.SetStyles({
+            fontSize: '18px',
+            color: '#ffffff',
+            backgroundColor: 'rgba(0,0,0,0)',
+            whiteSpace: 'normal'
+        });
+    }
+
+    async function buildControlsUI(parent) {
+        const controlsObj = await new BS.GameObject({ 
+            name: "ControlsUI", 
+            parent: parent, 
+            localPosition: new BS.Vector3(0, 1.5, 3), 
+            localEulerAngles: new BS.Vector3(0, 0, 0) 
+        }).Async();
+
+        const panel = await controlsObj.AddComponent(new BS.BanterUI(new BS.Vector2(880, 100), false));
+        const root = panel.CreateVisualElement();
+        await root.Async();
+        root.SetStyles({
+            width: '100%',
+            height: '100%',
+            backgroundColor: '#1a1c29',
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingTop: '20px',
+            paddingRight: '20px',
+            paddingBottom: '20px',
+            paddingLeft: '20px',
+            borderTopLeftRadius: '10px',
+            borderTopRightRadius: '10px',
+            borderBottomRightRadius: '10px',
+            borderBottomLeftRadius: '10px'
+        });
+
+        const createUIButton = async (text, color, isHostOnly, handler) => {
+            const btn = panel.CreateButton(root);
+            await btn.Async();
+            btn.text = text;
+            btn.SetStyles({ 
+                height: '60px', 
+                fontSize: '18px',
+                backgroundColor: color,
+                color: '#ffffff',
+                marginRight: '10px',
+                paddingTop: '0px', // Content-box issues
+                paddingRight: '15px',
+                paddingBottom: '0px',
+                paddingLeft: '15px'
+            });
+            
+            btn.OnClick(handler);
+
+            if (isHostOnly) {
+                uiElements.hostOnlyButtons.push(btn);
+            }
+            return btn;
+        };
+
+        uiElements.hardModeBtn = await createUIButton("HARD MODE", '#cc1111', true, () => {
+            if (!isHost()) return;
+            updateState({ hardMode: !gameState.hardMode });
+        });
+
+        await createUIButton("CLAIM HOST", '#e69900', false, () => {
+            const hostPresent = gameState.currentHostUid && scene.users[gameState.currentHostUid];
+            const now = Date.now();
+
+            if (!hostPresent) {
+                updateState({ currentHostUid: scene.localUser.uid, hostStealStartTime: 0, hostStealRequesterUid: null });
+            } else if (gameState.currentHostUid === scene.localUser.uid) {
+                updateState({ hostStealStartTime: 0, hostStealRequesterUid: null });
+            } else {
+                updateState({ hostStealStartTime: now, hostStealRequesterUid: scene.localUser.uid });
+            }
+        });
+
+        await createUIButton("JOIN GAME", '#0080ff', false, () => {
+            scene.TeleportTo(new BS.Vector3(0, GAME_HEIGHT + 2, 0), 0, true);
+            if (gameState.status === "LOBBY") {
+                updateState({ status: "RESETTING", endTime: Date.now() + 8000 });
+            }
+            const hostPresent = gameState.currentHostUid && scene.users[gameState.currentHostUid];
+            if (!hostPresent) {
+                updateState({ currentHostUid: scene.localUser.uid, hostStealStartTime: 0, hostStealRequesterUid: null });
+            }
+        });
+
+        uiElements.timerBtn = await createUIButton("INITIAL TIMER\n7S", '#1a801a', true, () => {
+            if (!isHost()) return;
+            let next = 10;
+            if (gameState.initialCountdown === 10) next = 7;
+            else if (gameState.initialCountdown === 7) next = 5;
+            else next = 10;
+            updateState({ initialCountdown: next });
+        });
+
+        uiElements.muteBtn = await createUIButton("MUTED\nFalse", '#8033cc', false, () => {
+            isMuted = !isMuted;
+            uiElements.muteBtn.text = isMuted ? "MUTED\nTrue" : "MUTED\nFalse";
+        });
+
+        await createUIButton("RESET", '#808080', true, () => {
+            if (!isHost()) return;
+            updateState({ status: "LOBBY", round: 0 });
+        });
+    }
+
+    async function buildLeaderboardUI(parent) {
+        const boardObj = await new BS.GameObject({ 
+            name: "LeaderboardUI", 
+            parent: parent, 
+            localPosition: new BS.Vector3(12, 2.5, 0), 
+            localEulerAngles: new BS.Vector3(0, 90, 0) 
+        }).Async();
+
+        const panel = await boardObj.AddComponent(new BS.BanterUI(new BS.Vector2(500, 420), false));
+        const root = panel.CreateVisualElement();
+        await root.Async();
+        root.SetStyles({
+            width: '100%',
+            height: '100%',
+            backgroundColor: '#1a1c29',
+            display: 'flex',
+            flexDirection: 'column',
+            paddingTop: '20px',
+            paddingRight: '20px',
+            paddingBottom: '20px',
+            paddingLeft: '20px',
+            borderTopLeftRadius: '10px',
+            borderTopRightRadius: '10px',
+            borderBottomRightRadius: '10px',
+            borderBottomLeftRadius: '10px'
+        });
+
+        // Tabs Row
+        const tabsRow = panel.CreateVisualElement(root);
+        await tabsRow.Async();
+        tabsRow.SetStyles({
+            display: 'flex',
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            marginBottom: '20px'
+        });
+
+        const createTabBtn = async (id, text) => {
+            const btn = panel.CreateButton(tabsRow);
+            await btn.Async();
+            btn.text = text;
+            btn.SetStyles({
+                height: '40px',
+                fontSize: '14px',
+                backgroundColor: id === uiState.leaderboardTab ? '#0080ff' : '#333333',
+                color: '#ffffff',
+                marginRight: '10px',
+                paddingTop: '0px',
+                paddingRight: '10px',
+                paddingBottom: '0px',
+                paddingLeft: '10px'
+            });
+            uiElements.tabs[id] = btn;
+
+            btn.OnClick(() => {
+                uiState.leaderboardTab = id;
+                uiState.leaderboardPage = 0;
+                
+                // Update tab colors
+                Object.keys(uiElements.tabs).forEach(tabId => {
+                    uiElements.tabs[tabId].SetStyles({
+                        backgroundColor: tabId === id ? '#0080ff' : '#333333'
+                    });
+                });
+                updateScoreboard();
+            });
+            return btn;
+        };
+
+        await createTabBtn('falls', 'MOST FALLS');
+        await createTabBtn('normal', 'NORMAL SURVIVAL');
+        await createTabBtn('hard', 'HARD SURVIVAL');
+
+        // Content Area
+        const contentArea = panel.CreateVisualElement(root);
+        await contentArea.Async();
+        contentArea.SetStyles({
+            display: 'flex',
+            flexDirection: 'column',
+            flexGrow: '1',
+            backgroundColor: '#0d0f17',
+            paddingTop: '10px',
+            paddingRight: '10px',
+            paddingBottom: '10px',
+            paddingLeft: '10px',
+            marginBottom: '20px'
+        });
+
+        uiElements.leaderboardContent = panel.CreateLabel(undefined, contentArea);
+        await uiElements.leaderboardContent.Async();
+        uiElements.leaderboardContent.text = "Loading...";
+        uiElements.leaderboardContent.SetStyles({
+            fontSize: '18px',
+            color: '#ffffff',
+            backgroundColor: 'rgba(0,0,0,0)'
+        });
+
+        // Pagination Row
+        const pageRow = panel.CreateVisualElement(root);
+        await pageRow.Async();
+        pageRow.SetStyles({
+            display: 'flex',
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+        });
+
+        const prevBtn = panel.CreateButton(pageRow);
+        await prevBtn.Async();
+        prevBtn.text = "< PREV";
+        prevBtn.SetStyles({ height: '40px', fontSize: '16px', backgroundColor: '#333333', color: '#ffffff' });
+        prevBtn.OnClick(() => {
+            if (uiState.leaderboardPage > 0) {
+                uiState.leaderboardPage--;
+                updateScoreboard();
+            }
+        });
+
+        uiElements.leaderboardPageInfo = panel.CreateLabel(undefined, pageRow);
+        await uiElements.leaderboardPageInfo.Async();
+        uiElements.leaderboardPageInfo.text = "Page 1";
+        uiElements.leaderboardPageInfo.SetStyles({
+            fontSize: '16px',
+            color: '#cccccc',
+            backgroundColor: 'rgba(0,0,0,0)'
+        });
+
+        const nextBtn = panel.CreateButton(pageRow);
+        await nextBtn.Async();
+        nextBtn.text = "NEXT >";
+        nextBtn.SetStyles({ height: '40px', fontSize: '16px', backgroundColor: '#333333', color: '#ffffff' });
+        nextBtn.OnClick(() => {
+            uiState.leaderboardPage++;
+            updateScoreboard();
+        });
     }
 
     async function buildGrid() {
@@ -352,18 +570,22 @@
         gameState = JSON.parse(raw);
         updateVisuals();
 
-        const hardTxt = await (await scene.Find("HardModeBtnText"))?.GetComponent(BS.CT.BanterText);
-        if (hardTxt) hardTxt.text = `HARD MODE\n${gameState.hardMode ? "ON" : "OFF"}`;
+        if (uiElements.hardModeBtn) {
+            uiElements.hardModeBtn.text = `HARD MODE\n${gameState.hardMode ? "ON" : "OFF"}`;
+        }
 
-        const timerTxt = await (await scene.Find("TimerBtnText"))?.GetComponent(BS.CT.BanterText);
-        if (timerTxt) timerTxt.text = `INITIAL TIMER\n${gameState.initialCountdown}S`;
+        if (uiElements.timerBtn) {
+            uiElements.timerBtn.text = `INITIAL TIMER\n${gameState.initialCountdown}S`;
+        }
 
         updateButtonVisibility();
     }
 
     function updateButtonVisibility() {
         const userIsHost = isHost();
-        hostOnlyButtons.forEach(btn => btn.SetActive(userIsHost));
+        uiElements.hostOnlyButtons.forEach(btn => {
+            if (btn) btn.SetStyles({ display: userIsHost ? 'flex' : 'none' });
+        });
     }
 
     function startSmoothReset() {
@@ -452,21 +674,52 @@
     }
 
     function updateScoreboard() {
-        if (!scoreboardFalls || !scoreboardNormal || !scoreboardHard) return;
+        if (!uiElements.leaderboardContent || !uiElements.leaderboardPageInfo) return;
         const state = scene.spaceState.public;
         const players = [];
         Object.keys(state).forEach(key => {
             if (key.startsWith(USER_DATA_KEY_PREFIX)) { try { players.push(JSON.parse(state[key])); } catch (e) {} }
         });
-        const updateBoard = (comp, title, sorted, formatter) => {
-            let str = `<size=1.2><b>${title}</b></size>\n\n`;
-            if (sorted.length === 0) str += "No records yet!";
-            else sorted.forEach((p, i) => str += `${i+1}. ${p.name}: ${formatter(p)}\n`);
-            comp.text = str;
-        };
-        updateBoard(scoreboardFalls, "MOST FALLS", [...players].sort((a, b) => b.falls - a.falls).slice(0, 50), p => p.falls);
-        updateBoard(scoreboardNormal, "NORMAL SURVIVAL", [...players].filter(p => p.bestNormal > 0).sort((a, b) => b.bestNormal - a.bestNormal).slice(0, 50), p => (p.bestNormal / 1000).toFixed(1) + "s");
-        updateBoard(scoreboardHard, "HARD SURVIVAL", [...players].filter(p => p.bestHard > 0).sort((a, b) => b.bestHard - a.bestHard).slice(0, 50), p => (p.bestHard / 1000).toFixed(1) + "s");
+
+        let sorted = [];
+        let formatter = null;
+        let title = "";
+
+        if (uiState.leaderboardTab === 'falls') {
+            title = "MOST FALLS";
+            sorted = [...players].sort((a, b) => b.falls - a.falls);
+            formatter = p => p.falls;
+        } else if (uiState.leaderboardTab === 'normal') {
+            title = "NORMAL SURVIVAL";
+            sorted = [...players].filter(p => p.bestNormal > 0).sort((a, b) => b.bestNormal - a.bestNormal);
+            formatter = p => (p.bestNormal / 1000).toFixed(1) + "s";
+        } else if (uiState.leaderboardTab === 'hard') {
+            title = "HARD SURVIVAL";
+            sorted = [...players].filter(p => p.bestHard > 0).sort((a, b) => b.bestHard - a.bestHard);
+            formatter = p => (p.bestHard / 1000).toFixed(1) + "s";
+        }
+
+        const totalPages = Math.max(1, Math.ceil(sorted.length / uiState.playersPerPage));
+        // Clamp page if it went out of bounds (e.g. from tab switch)
+        if (uiState.leaderboardPage >= totalPages) {
+            uiState.leaderboardPage = totalPages - 1;
+        }
+
+        const startIndex = uiState.leaderboardPage * uiState.playersPerPage;
+        const pageData = sorted.slice(startIndex, startIndex + uiState.playersPerPage);
+
+        let str = "";
+        if (pageData.length === 0) {
+            str = "No records yet!";
+        } else {
+            pageData.forEach((p, i) => {
+                const rank = startIndex + i + 1;
+                str += `${rank}. ${p.name}: ${formatter(p)}\n`;
+            });
+        }
+
+        uiElements.leaderboardContent.text = str;
+        uiElements.leaderboardPageInfo.text = `Page ${uiState.leaderboardPage + 1} of ${totalPages}`;
     }
 
     function updateUserStats(survivalTime, modeAtStart) {
@@ -546,14 +799,14 @@
             d.cube.SetActive(colorVisible);
         });
 
-        if (hostDisplay) {
+        if (uiElements.hostDisplay) {
             const hostUser = scene.users[gameState.currentHostUid];
             const requester = scene.users[gameState.hostStealRequesterUid];
             if (gameState.hostStealStartTime > 0 && requester) {
                 const remainingHost = Math.max(0, Math.ceil((TIMINGS.HOST_STEAL_DURATION - (now - gameState.hostStealStartTime)) / 1000));
-                hostDisplay.text = `<color=#ff0000>STEALING HOST: ${remainingHost}s</color>\n(Requested by: ${requester.name})`;
+                uiElements.hostDisplay.text = `<color=#ff0000>STEALING HOST: ${remainingHost}s</color>\n(Requested by: ${requester.name})`;
             } else {
-                hostDisplay.text = hostUser ? `CURRENT HOST: ${hostUser.name}` : "NO HOST ASSIGNED";
+                uiElements.hostDisplay.text = hostUser ? `CURRENT HOST: ${hostUser.name}` : "NO HOST ASSIGNED";
             }
         }
 
