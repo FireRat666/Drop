@@ -61,6 +61,7 @@
     // UI State
     let uiState = {
         leaderboardTab: 'falls', // 'falls', 'normal', 'hard'
+        leaderboardSizeFilter: 'normal', // 'normal', 'small'
         leaderboardPage: 0,
         playersPerPage: 10
     };
@@ -73,6 +74,7 @@
         hostDisplay: null,
         leaderboardContent: null,
         leaderboardPageInfo: null,
+        sizeFilterBtn: null,
         hostOnlyButtons: [],
         tabs: {}
     };
@@ -87,6 +89,7 @@
     // Local player game session tracking
     let gameStartTime = 0;
     let gameModeAtStart = false;
+    let gameGridModeAtStart = 'normal';
 
     // --- Utils ---
     const seededRandom = (seed) => {
@@ -210,7 +213,7 @@
             localEulerAngles: new BS.Vector3(0, -90, 0) 
         }).Async();
         
-        const panel = await rulesObj.AddComponent(new BS.BanterUI(new BS.Vector2(400, 360), false));
+        const panel = await rulesObj.AddComponent(new BS.BanterUI(new BS.Vector2(420, 390), false));
         const root = panel.CreateVisualElement();
         await root.Async();
         root.SetStyles({
@@ -263,11 +266,11 @@
         const controlsObj = await new BS.GameObject({ 
             name: "ControlsUI", 
             parent: parent, 
-            localPosition: new BS.Vector3(0, 1.5, 3), 
+            localPosition: new BS.Vector3(0, 1.1, 3), 
             localEulerAngles: new BS.Vector3(0, 0, 0) 
         }).Async();
 
-        const panel = await controlsObj.AddComponent(new BS.BanterUI(new BS.Vector2(880, 100), false));
+        const panel = await controlsObj.AddComponent(new BS.BanterUI(new BS.Vector2(1000, 90), false));
         const root = panel.CreateVisualElement();
         await root.Async();
         root.SetStyles({
@@ -434,6 +437,11 @@
                         backgroundColor: tabId === id ? '#0080ff' : '#333333'
                     });
                 });
+
+                if (uiElements.sizeFilterBtn) {
+                    uiElements.sizeFilterBtn.SetStyles({ display: id === 'falls' ? 'none' : 'flex' });
+                }
+
                 updateScoreboard();
             });
             return btn;
@@ -465,6 +473,25 @@
             fontSize: '18px',
             color: '#ffffff',
             backgroundColor: 'rgba(0,0,0,0)'
+        });
+
+        // Size Filter Button (only for Normal/Hard)
+        uiElements.sizeFilterBtn = panel.CreateButton(contentArea);
+        await uiElements.sizeFilterBtn.Async();
+        uiElements.sizeFilterBtn.text = "FILTER: 8x8 (NORMAL)";
+        uiElements.sizeFilterBtn.SetStyles({
+            height: '30px',
+            fontSize: '14px',
+            backgroundColor: '#444444',
+            color: '#ffffff',
+            marginTop: '10px',
+            display: 'none' // Hidden by default (falls tab)
+        });
+        uiElements.sizeFilterBtn.OnClick(() => {
+            uiState.leaderboardSizeFilter = uiState.leaderboardSizeFilter === 'normal' ? 'small' : 'normal';
+            uiElements.sizeFilterBtn.text = uiState.leaderboardSizeFilter === 'normal' ? "FILTER: 8x8 (NORMAL)" : "FILTER: 12x12 (SMALL)";
+            uiState.leaderboardPage = 0;
+            updateScoreboard();
         });
 
         // Pagination Row
@@ -597,7 +624,7 @@
         if (gameState.gridMode && gameState.gridMode !== currentGridMode) {
             currentGridMode = gameState.gridMode;
             if (currentGridMode === 'small') {
-                GRID_SIZE = 16;
+                GRID_SIZE = 12;
                 TILE_SIZE = 2;
             } else {
                 GRID_SIZE = 8;
@@ -620,7 +647,12 @@
         }
 
         if (uiElements.boardSizeBtn) {
-            uiElements.boardSizeBtn.text = `BOARD SIZE\n${gameState.gridMode === 'small' ? 'SMALL' : 'NORMAL'}`;
+            const isLobby = gameState.status === 'LOBBY';
+            const sizeStr = gameState.gridMode === 'small' ? 'SMALL' : 'NORMAL';
+            uiElements.boardSizeBtn.text = isLobby ? `BOARD SIZE\n${sizeStr}` : `BOARD SIZE\n${sizeStr}\n<size=10>(LOBBY ONLY)</size>`;
+            uiElements.boardSizeBtn.SetStyles({
+                backgroundColor: isLobby ? '#1180cc' : '#444444'
+            });
         }
 
         if (uiElements.hardModeBtn) {
@@ -743,13 +775,23 @@
             sorted = [...players].sort((a, b) => b.falls - a.falls);
             formatter = p => p.falls;
         } else if (uiState.leaderboardTab === 'normal') {
-            title = "NORMAL SURVIVAL";
-            sorted = [...players].filter(p => p.bestNormal > 0).sort((a, b) => b.bestNormal - a.bestNormal);
-            formatter = p => (p.bestNormal / 1000).toFixed(1) + "s";
+            title = `NORMAL SURVIVAL (${uiState.leaderboardSizeFilter === 'small' ? '12x12' : '8x8'})`;
+            if (uiState.leaderboardSizeFilter === 'small') {
+                sorted = [...players].filter(p => p.bestNormalSmall > 0).sort((a, b) => b.bestNormalSmall - a.bestNormalSmall);
+                formatter = p => (p.bestNormalSmall / 1000).toFixed(1) + "s";
+            } else {
+                sorted = [...players].filter(p => p.bestNormal > 0).sort((a, b) => b.bestNormal - a.bestNormal);
+                formatter = p => (p.bestNormal / 1000).toFixed(1) + "s";
+            }
         } else if (uiState.leaderboardTab === 'hard') {
-            title = "HARD SURVIVAL";
-            sorted = [...players].filter(p => p.bestHard > 0).sort((a, b) => b.bestHard - a.bestHard);
-            formatter = p => (p.bestHard / 1000).toFixed(1) + "s";
+            title = `HARD SURVIVAL (${uiState.leaderboardSizeFilter === 'small' ? '12x12' : '8x8'})`;
+            if (uiState.leaderboardSizeFilter === 'small') {
+                sorted = [...players].filter(p => p.bestHardSmall > 0).sort((a, b) => b.bestHardSmall - a.bestHardSmall);
+                formatter = p => (p.bestHardSmall / 1000).toFixed(1) + "s";
+            } else {
+                sorted = [...players].filter(p => p.bestHard > 0).sort((a, b) => b.bestHard - a.bestHard);
+                formatter = p => (p.bestHard / 1000).toFixed(1) + "s";
+            }
         }
 
         const totalPages = Math.max(1, Math.ceil(sorted.length / uiState.playersPerPage));
@@ -779,14 +821,25 @@
         console.log(`DROP GAME: Updating stats. SurvivalTime: ${survivalTime}, ModeAtStart: ${modeAtStart}`);
         const uid = scene.localUser.uid;
         const key = USER_DATA_KEY_PREFIX + uid;
-        let stats = { uid: uid, name: scene.localUser.name.replace(/<[^>]*>/g, ''), falls: 0, bestNormal: 0, bestHard: 0 };
+        let stats = { uid: uid, name: scene.localUser.name.replace(/<[^>]*>/g, ''), falls: 0, bestNormal: 0, bestHard: 0, bestNormalSmall: 0, bestHardSmall: 0 };
         const raw = scene.spaceState.public[key];
-        if (raw) { try { stats = JSON.parse(raw); } catch (e) {} }
+        if (raw) { 
+            try { 
+                const parsed = JSON.parse(raw);
+                stats = { ...stats, ...parsed };
+            } catch (e) {} 
+        }
         stats.falls++;
         stats.name = scene.localUser.name.replace(/<[^>]*>/g, '');
         if (survivalTime > 0) {
-            if (modeAtStart) { if (survivalTime > stats.bestHard) stats.bestHard = survivalTime; }
-            else { if (survivalTime > stats.bestNormal) stats.bestNormal = survivalTime; }
+            const isSmall = gameGridModeAtStart === 'small';
+            if (modeAtStart) { 
+                if (isSmall) { if (survivalTime > stats.bestHardSmall) stats.bestHardSmall = survivalTime; }
+                else { if (survivalTime > stats.bestHard) stats.bestHard = survivalTime; }
+            } else { 
+                if (isSmall) { if (survivalTime > stats.bestNormalSmall) stats.bestNormalSmall = survivalTime; }
+                else { if (survivalTime > stats.bestNormal) stats.bestNormal = survivalTime; }
+            }
         }
         console.log(`DROP GAME: Saving stats for ${stats.name}:`, stats);
         scene.SetPublicSpaceProps({ [key]: JSON.stringify(stats) });
@@ -810,6 +863,7 @@
                 console.log("DROP GAME: Starting survival timer");
                 gameStartTime = now;
                 gameModeAtStart = gameState.hardMode;
+                gameGridModeAtStart = gameState.gridMode;
             }
             const hostPresent = gameState.currentHostUid && scene.users[gameState.currentHostUid];
             if (!hostPresent) {
