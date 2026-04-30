@@ -219,11 +219,11 @@
         const rulesObj = await new BS.GameObject({ 
             name: "RulesUI", 
             parent: parent, 
-            localPosition: new BS.Vector3(-12, 2.5, 0), 
+            localPosition: new BS.Vector3(-12, 2.7, 0), 
             localEulerAngles: new BS.Vector3(0, -90, 0) 
         }).Async();
         
-        const panel = await rulesObj.AddComponent(new BS.BanterUI(new BS.Vector2(520, 460), false));
+        const panel = await rulesObj.AddComponent(new BS.BanterUI(new BS.Vector2(550, 460), false));
         const root = panel.CreateVisualElement();
         await root.Async();
         root.SetStyles({
@@ -232,6 +232,7 @@
             backgroundColor: '#1a1c29',
             display: 'flex',
             flexDirection: 'column',
+            alignItems:     'center',
             paddingTop: '20px',
             paddingRight: '20px',
             paddingBottom: '20px',
