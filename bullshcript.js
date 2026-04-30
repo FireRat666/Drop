@@ -219,11 +219,11 @@
         const rulesObj = await new BS.GameObject({ 
             name: "RulesUI", 
             parent: parent, 
-            localPosition: new BS.Vector3(-12, 2.7, 0), 
+            localPosition: new BS.Vector3(-11, 2.7, 0), 
             localEulerAngles: new BS.Vector3(0, -90, 0) 
         }).Async();
         
-        const panel = await rulesObj.AddComponent(new BS.BanterUI(new BS.Vector2(550, 460), false));
+        const panel = await rulesObj.AddComponent(new BS.BanterUI(new BS.Vector2(630, 410), false));
         const root = panel.CreateVisualElement();
         await root.Async();
         root.SetStyles({
@@ -232,7 +232,7 @@
             backgroundColor: '#1a1c29',
             display: 'flex',
             flexDirection: 'column',
-            alignItems:     'center',
+            alignItems: 'center',
             paddingTop: '20px',
             paddingRight: '20px',
             paddingBottom: '20px',
@@ -248,6 +248,7 @@
         title.text = 'HOW TO PLAY';
         title.SetStyles({
             fontSize: '28px',
+            alignItems: 'center',
             color: '#ffcc00',
             backgroundColor: 'rgba(0,0,0,0)',
             marginBottom: '16px',
@@ -257,6 +258,7 @@
         // Remove unityFontStyleAndWeight
         title.SetStyles({
             fontSize: '28px',
+            alignItems: 'center',
             color: '#ffcc00',
             backgroundColor: 'rgba(0,0,0,0)',
             marginBottom: '16px'
@@ -267,6 +269,8 @@
         body.text = "1. The Host clicks START GAME to teleport everyone into the arena.\n2. Look at the displays for the TARGET COLOR.\n3. Stand on a matching tile before time runs out.\n4. All other tiles will drop!\n5. Survive as long as you can.\n\nHOST CONTROLS:\n- Claim Host: Take control of game settings. Anyone can claim.\n- Tile Size: Switch between an 8x8 or 12x12 grid (lobby only).\n- Initial Timer: Set the first round's duration (10s, 7s, or 5s).\n- Hard Mode: Randomizes the board colors every round!\n- Reset: End the current game and return to the lobby.";
         body.SetStyles({
             fontSize: '18px',
+            alignItems: 'center',
+            justifyContent: 'center',
             color: '#ffffff',
             backgroundColor: 'rgba(0,0,0,0)',
             whiteSpace: 'normal'
@@ -1012,7 +1016,7 @@
         const rootTransform = await skyboxRoot.AddComponent(new BS.Transform());
         // --- Outer Sphere (Solid Background) ---
         const outerSphere = await new BS.GameObject({ name: "OuterSky", parent: skyboxRoot}).Async();
-        await outerSphere.AddComponent(new BS.BanterSphere({ radius: 400}));
+        await outerSphere.AddComponent(new BS.BanterSphere({ radius: 300}));
         await outerSphere.AddComponent(new BS.BanterInvertedMesh());
         await outerSphere.AddComponent(new BS.BanterMaterial({
             shaderName: "Unlit/Diffuse", 
@@ -1024,7 +1028,7 @@
         // --- Inner Sphere (Transparent Overlay) ---
         const innerSphere = await new BS.GameObject({ name: "InnerSky", parent: skyboxRoot}).Async();
         // Slightly smaller radius to avoid Z-fighting
-        await innerSphere.AddComponent(new BS.BanterSphere({ radius: 390}));
+        await innerSphere.AddComponent(new BS.BanterSphere({ radius: 290}));
         await innerSphere.AddComponent(new BS.BanterInvertedMesh());
         await innerSphere.AddComponent(new BS.BanterMaterial({
             // Use a transparent unlit shader. "Sprites/Default" or "Unlit/Transparent" usually work well in Unity/Banter.
