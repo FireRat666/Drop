@@ -57,6 +57,9 @@
     let lastFallTime = 0;
     let isResettingSmoothly = false;
     let lastHostActionTime = 0;
+    let lastHostState = null;
+    let lastHostUid = null;
+    let visibilityInitialized = false;
 
     // UI State
     let uiState = {
@@ -77,7 +80,8 @@
         sizeFilterBtn: null,
         hostOnlyButtons: [],
         tabs: {},
-        hostControlsObj: null
+        hostControlsObj: null,
+        hostRoot: null
     };
 
     let currentGridMode = 'normal';
@@ -343,6 +347,7 @@
             width: '100%', height: '100%', backgroundColor: '#1a1c29', display: 'flex', flexDirection: 'row',
             alignItems: 'center', justifyContent: 'center', padding: '20px', borderRadius: '10px'
         });
+        uiElements.hostRoot = hostRoot;
 
         uiElements.hardModeBtn = await createUIButton(hostPanel, hostRoot, "HARD MODE", '#cc1111', true, () => {
             if (!isHost()) return;
@@ -691,8 +696,37 @@
 
     function updateButtonVisibility() {
         const userIsHost = isHost();
+        const currentHostUid = gameState.currentHostUid;
+        
+        const hasControls = !!uiElements.hostControlsObj;
+        const hasRoot = !!uiElements.hostRoot;
+
+        if (visibilityInitialized && userIsHost === lastHostState && currentHostUid === lastHostUid) return;
+        
+        if (hasControls && hasRoot) {
+            visibilityInitialized = true;
+        }
+
+        console.log(`DROP GAME: Host change detected. UserIsHost: ${userIsHost}, HostUid: ${currentHostUid}, HasControls: ${hasControls}, HasRoot: ${hasRoot}`);
+        lastHostState = userIsHost;
+        lastHostUid = currentHostUid;
+
         if (uiElements.hostControlsObj) {
-            uiElements.hostControlsObj.SetActive(userIsHost);
+            const trans = uiElements.hostControlsObj.GetComponent(BS.CT.Transform);
+            if (trans) {
+                // Moving and scaling is often more reliable than SetActive for world-aligned Screen UIs
+                if (userIsHost) {
+                    trans.localPosition = new BS.Vector3(0, 2.1, 3);
+                    trans.localScale = new BS.Vector3(1, 1, 1);
+                } else {
+                    trans.localPosition = new BS.Vector3(0, -100, 0);
+                    trans.localScale = new BS.Vector3(0, 0, 0);
+                }
+            }
+        }
+        
+        if (uiElements.hostRoot) {
+            uiElements.hostRoot.SetStyles({ display: userIsHost ? 'flex' : 'none' });
         }
     }
 
@@ -988,6 +1022,7 @@
     function updateState(patch) {
         Object.assign(gameState, patch);
         scene.SetPublicSpaceProps({ [STATE_KEY]: JSON.stringify(gameState) });
+        updateButtonVisibility();
     }
 
     function removePlayerFromActive(uid) {
