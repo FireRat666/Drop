@@ -38,23 +38,23 @@
         hardMode: false,
         gridMode: 'normal',
         initialCountdown: 7,
-        activePlayers: 0,
+        activePlayersList: [],
+        initialPlayersCount: 0,
+        gameId: 0,
+        winnerUid: null,
         currentHostUid: null,
         hostStealStartTime: 0,
         hostStealRequesterUid: null
     };
+
+    let lastProcessedGameId = 0;
 
     let tiles = [];
     let ui = { root: null, displays: [] };
     let audio = { tick: null };
     let isLocalInArena = false;
     let isMuted = false;
-    let scoreboardFalls = null;
-    let scoreboardNormal = null;
-    let scoreboardHard = null;
-    let hostDisplay = null;
     let lastFallTime = 0;
-    let hostOnlyButtons = [];
     let isResettingSmoothly = false;
     let lastHostActionTime = 0;
 
@@ -76,7 +76,8 @@
         leaderboardPageInfo: null,
         sizeFilterBtn: null,
         hostOnlyButtons: [],
-        tabs: {}
+        tabs: {},
+        hostControlsObj: null
     };
 
     let currentGridMode = 'normal';
@@ -117,9 +118,12 @@
         settings.EnableTeleport = false;
         settings.EnableJump = true;
         settings.MaxOccupancy = 30;
-        settings.RefreshRate = 72;
+        settings.RefreshRate = 90;
+        settings.EnableHandHold = false;
         settings.ClippingPlane = new BS.Vector2(0.05, 500);
         settings.SpawnPoint = new BS.Vector4(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z, 0);
+        settings.PhysicsSettingsLocked = true;
+        settings.SettingsLocked = true;
         scene.SetSettings(settings);
 
         COLORS = COLORS.map(c => ({ ...c, vec: new BS.Vector4(c.vec[0], c.vec[1], c.vec[2], c.vec[3]) }));
@@ -180,6 +184,9 @@
         });
         arenaTracker.On("trigger-exit", (e) => {
             if (e.detail.user && e.detail.user.isLocal) isLocalInArena = false;
+            if (isHost() && e.detail.user) {
+                removePlayerFromActive(e.detail.user.uid);
+            }
         });
 
         // Death Zone
@@ -195,6 +202,9 @@
                     gameStartTime = 0;
                     scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 0, true);
                 }
+            }
+            if (isHost() && e.detail.user) {
+                removePlayerFromActive(e.detail.user.uid);
             }
         });
 
@@ -263,76 +273,43 @@
     }
 
     async function buildControlsUI(parent) {
-        const controlsObj = await new BS.GameObject({ 
-            name: "ControlsUI", 
+        const userControlsObj = await new BS.GameObject({ 
+            name: "UserControlsUI", 
             parent: parent, 
             localPosition: new BS.Vector3(0, 1.1, 3), 
             localEulerAngles: new BS.Vector3(0, 0, 0) 
         }).Async();
 
-        const panel = await controlsObj.AddComponent(new BS.BanterUI(new BS.Vector2(1000, 90), false));
-        const root = panel.CreateVisualElement();
-        await root.Async();
-        root.SetStyles({
-            width: '100%',
-            height: '100%',
-            backgroundColor: '#1a1c29',
-            display: 'flex',
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            paddingTop: '20px',
-            paddingRight: '20px',
-            paddingBottom: '20px',
-            paddingLeft: '20px',
-            borderTopLeftRadius: '10px',
-            borderTopRightRadius: '10px',
-            borderBottomRightRadius: '10px',
-            borderBottomLeftRadius: '10px'
+        const userPanel = await userControlsObj.AddComponent(new BS.BanterUI(new BS.Vector2(320, 90), false));
+        const userRoot = userPanel.CreateVisualElement();
+        await userRoot.Async();
+        userRoot.SetStyles({
+            width: '100%', height: '100%', backgroundColor: '#1a1c29', display: 'flex', flexDirection: 'row',
+            alignItems: 'center', justifyContent: 'center', padding: '20px', borderRadius: '10px'
         });
 
-        const createUIButton = async (text, color, isHostOnly, handler) => {
-            const btn = panel.CreateButton(root);
+        const createUIButton = async (panelRef, rootRef, text, color, isHostOnly, handler) => {
+            const btn = panelRef.CreateButton(rootRef);
             await btn.Async();
             btn.text = text;
             btn.SetStyles({ 
-                height: '60px', 
-                fontSize: '18px',
-                backgroundColor: color,
-                color: '#ffffff',
-                marginRight: '10px',
-                paddingTop: '0px', // Content-box issues
-                paddingRight: '15px',
-                paddingBottom: '0px',
-                paddingLeft: '15px'
+                height: '60px', fontSize: '18px', backgroundColor: color, color: '#ffffff',
+                marginRight: '10px', paddingTop: '0px', paddingRight: '15px', paddingBottom: '0px', paddingLeft: '15px'
             });
-            
             btn.OnClick(() => {
                 btn.SetStyles({ backgroundColor: '#555555' });
                 setTimeout(() => btn.SetStyles({ backgroundColor: color }), 150);
                 handler();
             });
-
             if (isHostOnly) {
                 uiElements.hostOnlyButtons.push(btn);
             }
             return btn;
         };
 
-        uiElements.hardModeBtn = await createUIButton("HARD MODE", '#cc1111', true, () => {
-            if (!isHost()) return;
-            updateState({ hardMode: !gameState.hardMode });
-        });
-
-        uiElements.boardSizeBtn = await createUIButton("BOARD SIZE\nNORMAL", '#1180cc', true, () => {
-            if (!isHost() || gameState.status !== "LOBBY") return;
-            updateState({ gridMode: gameState.gridMode === 'normal' ? 'small' : 'normal' });
-        });
-
-        await createUIButton("CLAIM HOST", '#e69900', false, () => {
+        await createUIButton(userPanel, userRoot, "CLAIM HOST", '#e69900', false, () => {
             const hostPresent = gameState.currentHostUid && scene.users[gameState.currentHostUid];
             const now = Date.now();
-
             if (!hostPresent) {
                 updateState({ currentHostUid: scene.localUser.uid, hostStealStartTime: 0, hostStealRequesterUid: null });
             } else if (gameState.currentHostUid === scene.localUser.uid) {
@@ -342,18 +319,38 @@
             }
         });
 
-        await createUIButton("JOIN GAME", '#0080ff', false, () => {
-            scene.TeleportTo(new BS.Vector3(0, GAME_HEIGHT + 2, 0), 0, true);
-            if (gameState.status === "LOBBY") {
-                updateState({ status: "RESETTING", endTime: Date.now() + 8000 });
-            }
-            const hostPresent = gameState.currentHostUid && scene.users[gameState.currentHostUid];
-            if (!hostPresent) {
-                updateState({ currentHostUid: scene.localUser.uid, hostStealStartTime: 0, hostStealRequesterUid: null });
-            }
+        uiElements.muteBtn = await createUIButton(userPanel, userRoot, "MUTED\nFalse", '#8033cc', false, () => {
+            isMuted = !isMuted;
+            uiElements.muteBtn.text = isMuted ? "MUTED\nTrue" : "MUTED\nFalse";
         });
 
-        uiElements.timerBtn = await createUIButton("INITIAL TIMER\n7S", '#1a801a', true, () => {
+        const hostControlsObj = await new BS.GameObject({ 
+            name: "HostControlsUI", 
+            parent: parent, 
+            localPosition: new BS.Vector3(0, 2.1, 3), 
+            localEulerAngles: new BS.Vector3(0, 0, 0) 
+        }).Async();
+        uiElements.hostControlsObj = hostControlsObj;
+
+        const hostPanel = await hostControlsObj.AddComponent(new BS.BanterUI(new BS.Vector2(750, 90), false));
+        const hostRoot = hostPanel.CreateVisualElement();
+        await hostRoot.Async();
+        hostRoot.SetStyles({
+            width: '100%', height: '100%', backgroundColor: '#1a1c29', display: 'flex', flexDirection: 'row',
+            alignItems: 'center', justifyContent: 'center', padding: '20px', borderRadius: '10px'
+        });
+
+        uiElements.hardModeBtn = await createUIButton(hostPanel, hostRoot, "HARD MODE", '#cc1111', true, () => {
+            if (!isHost()) return;
+            updateState({ hardMode: !gameState.hardMode });
+        });
+
+        uiElements.boardSizeBtn = await createUIButton(hostPanel, hostRoot, "TILE SIZE\nNORMAL", '#1180cc', true, () => {
+            if (!isHost() || gameState.status !== "LOBBY") return;
+            updateState({ gridMode: gameState.gridMode === 'normal' ? 'small' : 'normal' });
+        });
+
+        uiElements.timerBtn = await createUIButton(hostPanel, hostRoot, "INITIAL TIMER\n7S", '#1a801a', true, () => {
             if (!isHost()) return;
             let next = 10;
             if (gameState.initialCountdown === 10) next = 7;
@@ -362,14 +359,24 @@
             updateState({ initialCountdown: next });
         });
 
-        uiElements.muteBtn = await createUIButton("MUTED\nFalse", '#8033cc', false, () => {
-            isMuted = !isMuted;
-            uiElements.muteBtn.text = isMuted ? "MUTED\nTrue" : "MUTED\nFalse";
+        await createUIButton(hostPanel, hostRoot, "START GAME", '#0080ff', true, () => {
+            if (!isHost()) return;
+            if (gameState.status === "LOBBY" || gameState.status === "WINNER") {
+                const uids = Object.keys(scene.users || {});
+                updateState({ 
+                    status: "RESETTING", 
+                    endTime: Date.now() + 8000,
+                    activePlayersList: uids,
+                    initialPlayersCount: uids.length,
+                    gameId: Date.now(),
+                    winnerUid: null
+                });
+            }
         });
 
-        await createUIButton("RESET", '#808080', true, () => {
+        await createUIButton(hostPanel, hostRoot, "RESET", '#808080', true, () => {
             if (!isHost()) return;
-            updateState({ status: "LOBBY", round: 0 });
+            updateState({ status: "LOBBY", round: 0, winnerUid: null });
         });
     }
 
@@ -489,7 +496,7 @@
         });
         uiElements.sizeFilterBtn.OnClick(() => {
             uiState.leaderboardSizeFilter = uiState.leaderboardSizeFilter === 'normal' ? 'small' : 'normal';
-            uiElements.sizeFilterBtn.text = uiState.leaderboardSizeFilter === 'normal' ? "FILTER: 8x8 (NORMAL)" : "FILTER: 12x12 (SMALL)";
+            uiElements.sizeFilterBtn.text = uiState.leaderboardSizeFilter === 'normal' ? "FILTER: 8x8" : "FILTER: 12x12";
             uiState.leaderboardPage = 0;
             updateScoreboard();
         });
@@ -607,8 +614,11 @@
                     updateState({ currentHostUid: scene.localUser.uid, hostStealStartTime: 0, hostStealRequesterUid: null });
                 }
             }
-            if (isHost() && e.detail.uid === gameState.hostStealRequesterUid) {
-                updateState({ hostStealStartTime: 0, hostStealRequesterUid: null });
+            if (isHost()) {
+                if (e.detail.uid === gameState.hostStealRequesterUid) {
+                    updateState({ hostStealStartTime: 0, hostStealRequesterUid: null });
+                }
+                removePlayerFromActive(e.detail.uid);
             }
         });
         sync();
@@ -648,8 +658,8 @@
 
         if (uiElements.boardSizeBtn) {
             const isLobby = gameState.status === 'LOBBY';
-            const sizeStr = gameState.gridMode === 'small' ? 'SMALL' : 'NORMAL';
-            uiElements.boardSizeBtn.text = isLobby ? `BOARD SIZE\n${sizeStr}` : `BOARD SIZE\n${sizeStr}\n<size=10>(LOBBY ONLY)</size>`;
+            const sizeStr = gameState.gridMode === 'small' ? '12x12' : '8x8';
+            uiElements.boardSizeBtn.text = isLobby ? `TILE SIZE\n${sizeStr}` : `TILE SIZE\n${sizeStr}\n<size=10>(LOBBY ONLY)</size>`;
             uiElements.boardSizeBtn.SetStyles({
                 backgroundColor: isLobby ? '#1180cc' : '#444444'
             });
@@ -664,13 +674,22 @@
         }
 
         updateButtonVisibility();
+
+        if (gameState.gameId && gameState.gameId !== lastProcessedGameId) {
+            lastProcessedGameId = gameState.gameId;
+            if (gameState.activePlayersList && gameState.activePlayersList.includes(scene.localUser.uid)) {
+                const rx = (Math.random() * 6) - 3;
+                const rz = (Math.random() * 6) - 3;
+                scene.TeleportTo(new BS.Vector3(rx, GAME_HEIGHT + 2, rz), 0, true);
+            }
+        }
     }
 
     function updateButtonVisibility() {
         const userIsHost = isHost();
-        uiElements.hostOnlyButtons.forEach(btn => {
-            if (btn) btn.SetStyles({ display: userIsHost ? 'flex' : 'none' });
-        });
+        if (uiElements.hostControlsObj) {
+            uiElements.hostControlsObj.SetActive(userIsHost);
+        }
     }
 
     function startSmoothReset() {
@@ -898,6 +917,11 @@
             }
         } else if (gameState.status === "LOBBY") displayStr = "DROP GAME";
         else if (gameState.status === "DROPPED") displayStr = "!!!";
+        else if (gameState.status === "WINNER") {
+            const winnerUser = scene.users[gameState.winnerUid];
+            const name = winnerUser ? winnerUser.name.replace(/<[^>]*>/g, '') : "SOMEONE";
+            displayStr = `WINNER\n${name}`;
+        }
         else displayStr = "WAIT";
 
         ui.displays.forEach(d => {
@@ -935,6 +959,7 @@
             const nextSeed = gameState.hardMode ? Math.floor(Math.random() * 999999) : gameState.seed;
             updateState({ status: "RESETTING", seed: nextSeed, endTime: now + (TIMINGS.RESETTING * 1000) });
         } else if (gameState.status === "RESETTING") startNextRound(gameState.round + 1, gameState.seed);
+        else if (gameState.status === "WINNER") updateState({ status: "LOBBY", winnerUid: null });
     }
 
     function startNextRound(roundNum, seed) {
@@ -961,6 +986,24 @@
         scene.SetPublicSpaceProps({ [STATE_KEY]: JSON.stringify(gameState) });
     }
 
+    function removePlayerFromActive(uid) {
+        if (!gameState.activePlayersList || !gameState.activePlayersList.includes(uid)) return;
+        const newList = gameState.activePlayersList.filter(id => id !== uid);
+        
+        let patch = { activePlayersList: newList };
+
+        if (gameState.status !== "LOBBY" && gameState.status !== "WINNER") {
+            if (newList.length === 1 && gameState.initialPlayersCount > 1) {
+                patch.status = "WINNER";
+                patch.winnerUid = newList[0];
+                patch.endTime = Date.now() + 5000;
+            } else if (newList.length === 0) {
+                patch.status = "LOBBY";
+            }
+        }
+        updateState(patch);
+    }
+
     async function createPerformantAnimatedSkybox() {
         const scene = BS.BanterScene.GetInstance();
         
@@ -972,7 +1015,7 @@
         await outerSphere.AddComponent(new BS.BanterInvertedMesh());
         await outerSphere.AddComponent(new BS.BanterMaterial({
             shaderName: "Unlit/Diffuse", 
-            texture: "https://images.hdqwalls.com/wallpapers/skybox-4k-zc.jpg", 
+            texture: "https://drop.firer.at/Assets/skybox-4k-zc.jpg", 
             color: new BS.Vector4(1, 1, 1, 1),
             side: BS.MaterialSide.Front
         }));
@@ -985,7 +1028,7 @@
         await innerSphere.AddComponent(new BS.BanterMaterial({
             // Use a transparent unlit shader. "Sprites/Default" or "Unlit/Transparent" usually work well in Unity/Banter.
             shaderName: "Unlit/Transparent", 
-            texture: "https://clipground.com/images/white-stars-png-10.png",
+            texture: "https://drop.firer.at/Assets/StarField_4K.png",
             color: new BS.Vector4(1, 1, 1, 0.8), // Slight tint/transparency
             side: BS.MaterialSide.Front
         }));
