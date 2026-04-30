@@ -219,7 +219,7 @@
         const rulesObj = await new BS.GameObject({ 
             name: "RulesUI", 
             parent: parent, 
-            localPosition: new BS.Vector3(-11, 2.7, 0), 
+            localPosition: new BS.Vector3(-12, 2.7, 0), 
             localEulerAngles: new BS.Vector3(0, -90, 0) 
         }).Async();
         
@@ -258,7 +258,7 @@
         // Remove unityFontStyleAndWeight
         title.SetStyles({
             fontSize: '28px',
-            alignItems: 'center',
+            textAlign: 'center',
             color: '#ffcc00',
             backgroundColor: 'rgba(0,0,0,0)',
             marginBottom: '16px'
@@ -269,8 +269,7 @@
         body.text = "1. The Host clicks START GAME to teleport everyone into the arena.\n2. Look at the displays for the TARGET COLOR.\n3. Stand on a matching tile before time runs out.\n4. All other tiles will drop!\n5. Survive as long as you can.\n\nHOST CONTROLS:\n- Claim Host: Take control of game settings. Anyone can claim.\n- Tile Size: Switch between an 8x8 or 12x12 grid (lobby only).\n- Initial Timer: Set the first round's duration (10s, 7s, or 5s).\n- Hard Mode: Randomizes the board colors every round!\n- Reset: End the current game and return to the lobby.";
         body.SetStyles({
             fontSize: '18px',
-            alignItems: 'center',
-            justifyContent: 'center',
+            textAlign: 'center',
             color: '#ffffff',
             backgroundColor: 'rgba(0,0,0,0)',
             whiteSpace: 'normal'
