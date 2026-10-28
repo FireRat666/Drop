@@ -55,7 +55,8 @@
     let isLocalInArena = false;
     let isMuted = false;
     let lastFallTime = 0;
-    let isResettingSmoothly = false;
+    let pendingSurvival = null;
+    let dropAnim = { stand: null, group: null, tf: null, y: 0, to: 0, from: 0, start: 0, dur: 0, gravity: false, raf: 0, busy: false };
     let lastHostActionTime = 0;
     let lastHostState = null;
     let lastHostUid = null;
@@ -187,7 +188,10 @@
             }
         });
         arenaTracker.On("trigger-exit", (e) => {
-            if (e.detail.user && e.detail.user.isLocal) isLocalInArena = false;
+            if (e.detail.user && e.detail.user.isLocal) {
+                isLocalInArena = false;
+                captureSurvival();
+            }
             if (isHost() && e.detail.user) {
                 removePlayerFromActive(e.detail.user.uid);
             }
@@ -202,8 +206,10 @@
                 const now = Date.now();
                 if (now - lastFallTime > 1000) {
                     lastFallTime = now;
-                    updateUserStats(gameStartTime > 0 ? now - gameStartTime : 0, gameModeAtStart);
-                    gameStartTime = 0;
+                    captureSurvival();
+                    const run = (pendingSurvival && now - pendingSurvival.at < 10000) ? pendingSurvival : null;
+                    pendingSurvival = null;
+                    updateUserStats(run ? run.time : 0, run ? run.hard : gameModeAtStart, run ? run.grid : gameGridModeAtStart, true);
                     scene.TeleportTo(new BS.Vector3(LOBBY_POS_RAW.x, LOBBY_POS_RAW.y, LOBBY_POS_RAW.z), 0, true);
                 }
             }
@@ -556,35 +562,37 @@
         }
         const gridRoot = await new BS.GameObject({ name: "GridRoot", localPosition: new BS.Vector3(0, GAME_HEIGHT, 0) }).Async();
         environmentElements.gridRoot = gridRoot;
+
+        // Tiles sit in one of two groups at the same origin. Tiles that should fall are moved
+        // into dropGroup and only that one object is animated: one update per frame instead of
+        // one (or two) per tile. Rigidbodies are avoided on purpose: every property change on a
+        // BanterRigidbody re-applies its velocity, which logs a Unity warning with a stack trace
+        // on kinematic bodies, and that is what made each drop/reset hitch.
+        const standGroup = await new BS.GameObject({ name: "StandGroup", parent: gridRoot, localPosition: new BS.Vector3(0, 0, 0) }).Async();
+        const dropGroup = await new BS.GameObject({ name: "DropGroup", parent: gridRoot, localPosition: new BS.Vector3(0, 0, 0) }).Async();
+        if (dropAnim.raf) cancelAnimationFrame(dropAnim.raf);
+        Object.assign(dropAnim, { stand: standGroup, group: dropGroup, tf: await dropGroup.GetComponent(BS.CT.Transform), y: 0, to: 0, raf: 0, busy: false });
+
         const offset = (GRID_SIZE * TILE_SIZE) / 2 - (TILE_SIZE / 2);
         const tilePromises = [];
 
         for (let x = 0; x < GRID_SIZE; x++) {
             for (let z = 0; z < GRID_SIZE; z++) {
                 tilePromises.push((async (lx, lz) => {
-                    const initialWorldPos = { x: lx * TILE_SIZE - offset, y: GAME_HEIGHT, z: lz * TILE_SIZE - offset };
-                    const initialRotation = { x: 0, y: 0, z: 0, w: 1 };
                     const tile = await new BS.GameObject({
-                        name: `Tile_${lx}_${lz}`, parent: gridRoot,
+                        name: `Tile_${lx}_${lz}`, parent: standGroup,
                         localPosition: new BS.Vector3(lx * TILE_SIZE - offset, 0, lz * TILE_SIZE - offset)
                     }).Async();
                     await tile.AddComponent(new BS.BanterBox({ width: TILE_SIZE - 0.1, height: 0.4, depth: TILE_SIZE - 0.1 }));
                     await tile.AddComponent(new BS.BoxCollider({ size: new BS.Vector3(TILE_SIZE - 0.1, 0.4, TILE_SIZE - 0.1) }));
                     const mat = await tile.AddComponent(new BS.BanterMaterial("Standard", "", new BS.Vector4(1, 1, 1, 1), BS.MaterialSide.Front, false, `Tile_${lx}_${lz}`));
-                    const rb = await tile.AddComponent(new BS.BanterRigidbody({
-                        useGravity: true,
-                        isKinematic: true,
-                        freezePositionX: true,
-                        freezePositionZ: true,
-                        freezeRotationX: true,
-                        freezeRotationY: true,
-                        freezeRotationZ: true
-                    }));
-                    tiles.push({ obj: tile, mat: mat, rb: rb, x: lx, z: lz, initialWorldPos: initialWorldPos, initialRotation: initialRotation });
+                    tiles.push({ obj: tile, mat: mat, x: lx, z: lz, colorIdx: -1, inDropGroup: false });
                 })(x, z));
             }
         }
         await Promise.all(tilePromises);
+        // Keep tiles in grid order so seeded colours match on every client.
+        tiles.sort((a, b) => (a.x - b.x) || (a.z - b.z));
     }
 
     async function setupUI() {
@@ -653,6 +661,7 @@
             tiles.forEach(t => t.obj.Destroy());
             tiles = [];
             await buildGrid();
+            updateVisuals();
 
             const newSize = GRID_SIZE * TILE_SIZE;
             if (environmentElements.arenaTracker) {
@@ -730,89 +739,62 @@
         }
     }
 
-    function startSmoothReset() {
-        if (isResettingSmoothly) return;
-        isResettingSmoothly = true;
+    // --- Tile drop / rise animation (moves only the drop group) ---
+    const DROP_DEPTH = -9.5;   // rests on the landing collider
+    const RISE_MS = 1500;
 
-        const duration = 1500;
-        const startTime = Date.now();
+    function animateDropGroup(to, gravity) {
+        if (!dropAnim.tf) return;
+        if (dropAnim.to === to && (dropAnim.raf || dropAnim.y === to)) return;
+        dropAnim.from = dropAnim.y;
+        dropAnim.to = to;
+        dropAnim.gravity = gravity;
+        dropAnim.start = performance.now();
+        dropAnim.dur = gravity ? Math.sqrt(2 * Math.abs(to - dropAnim.from) / 9.81) * 1000 : RISE_MS;
+        if (!dropAnim.raf) dropAnim.raf = requestAnimationFrame(stepDropGroup);
+    }
 
-        tiles.forEach((tile, index) => {
-            // Check if this tile was dropped before we reset its kinematic state
-            const didDrop = tile.rb.isKinematic === false;
-            
-            tile.rb.isKinematic = true;
-            tile.rb.velocity = new BS.Vector3(0, 0, 0);
-            tile.rb.angularVelocity = new BS.Vector3(0, 0, 0);
+    function stepDropGroup() {
+        const t = Math.min(1, (performance.now() - dropAnim.start) / Math.max(1, dropAnim.dur));
+        const k = dropAnim.gravity ? t * t : 1 - (1 - t) * (1 - t);
+        dropAnim.y = dropAnim.from + (dropAnim.to - dropAnim.from) * k;
+        dropAnim.tf.localPosition = new BS.Vector3(0, dropAnim.y, 0);
+        dropAnim.raf = t < 1 ? requestAnimationFrame(stepDropGroup) : 0;
+    }
 
-            const p = tile.obj.transform.position;
-            const r = tile.obj.transform.rotation;
-            
-            // To reliably target tiles from the *previous* round that fell without being affected 
-            // by the newly randomized seed, we identify them by their drop state.
-            tile.needsReset = didDrop;
-            
-            if (tile.needsReset) {
-                tile.resetStartPos = { x: p.x, y: p.y, z: p.z };
-                tile.resetStartRot = { x: r.x, y: r.y, z: r.z, w: r.w };
-            }
-        });
-
-        const animate = () => {
-            const elapsed = Date.now() - startTime;
-            const t = Math.min(1, elapsed / duration);
-
+    // Put the tiles that are not the target colour into the drop group, then let it fall.
+    async function startDrop() {
+        if (dropAnim.busy || !dropAnim.tf || (dropAnim.to === DROP_DEPTH && (dropAnim.raf || dropAnim.y === DROP_DEPTH))) return;
+        dropAnim.busy = true;
+        try {
+            if (dropAnim.raf) { cancelAnimationFrame(dropAnim.raf); dropAnim.raf = 0; }
+            if (dropAnim.y !== 0) { dropAnim.y = 0; dropAnim.to = 0; dropAnim.tf.localPosition = new BS.Vector3(0, 0, 0); }
+            const moves = [];
             tiles.forEach(tile => {
-                if (!tile.needsReset || !tile.resetStartPos || !tile.initialWorldPos) return;
-
-                const px = tile.resetStartPos.x + (tile.initialWorldPos.x - tile.resetStartPos.x) * t;
-                const py = tile.resetStartPos.y + (tile.initialWorldPos.y - tile.resetStartPos.y) * t;
-                const pz = tile.resetStartPos.z + (tile.initialWorldPos.z - tile.resetStartPos.z) * t;
-                tile.rb.MovePosition(new BS.Vector3(px, py, pz));
-
-                const rx = tile.resetStartRot.x + (tile.initialRotation.x - tile.resetStartRot.x) * t;
-                const ry = tile.resetStartRot.y + (tile.initialRotation.y - tile.resetStartRot.y) * t;
-                const rz = tile.resetStartRot.z + (tile.initialRotation.z - tile.resetStartRot.z) * t;
-                const rw = tile.resetStartRot.w + (tile.initialRotation.w - tile.resetStartRot.w) * t;
-                const mag = Math.sqrt(rx * rx + ry * ry + rz * rz + rw * rw);
-                tile.rb.MoveRotation(new BS.Quaternion(rx / mag, ry / mag, rz / mag, rw / mag));
+                const shouldDrop = tile.colorIdx !== gameState.targetColorIndex;
+                if (tile.inDropGroup !== shouldDrop) {
+                    tile.inDropGroup = shouldDrop;
+                    moves.push(tile.obj.SetParent(shouldDrop ? dropAnim.group : dropAnim.stand, false));
+                }
             });
-
-            if (t < 1 && (gameState.status === "RESETTING" || gameState.status === "LOBBY")) {
-                requestAnimationFrame(animate);
-            } else {
-                isResettingSmoothly = false;
-                
-                // Snap the resetting tiles perfectly into position at the end
-                tiles.forEach(tile => {
-                    if (tile.needsReset && tile.initialWorldPos) {
-                         tile.rb.MovePosition(new BS.Vector3(tile.initialWorldPos.x, tile.initialWorldPos.y, tile.initialWorldPos.z));
-                         tile.rb.MoveRotation(new BS.Quaternion(tile.initialRotation.x, tile.initialRotation.y, tile.initialRotation.z, tile.initialRotation.w));
-                    }
-                });
-            }
-        };
-        requestAnimationFrame(animate);
+            await Promise.all(moves);
+            if (gameState.status === "DROPPED") animateDropGroup(DROP_DEPTH, true);
+        } finally {
+            dropAnim.busy = false;
+        }
     }
 
     function updateVisuals() {
-        const isDropped = gameState.status === "DROPPED";
-        const isResetting = gameState.status === "RESETTING" || gameState.status === "LOBBY";
-
         tiles.forEach((tile, index) => {
             const colorIdx = Math.floor(seededRandom(gameState.seed + index) * COLORS.length);
-            tile.mat.color = COLORS[colorIdx].vec;
-
-            if (isDropped) {
-                if (colorIdx !== gameState.targetColorIndex) {
-                    tile.rb.isKinematic = false;
-                }
+            if (tile.colorIdx !== colorIdx) {
+                tile.colorIdx = colorIdx;
+                tile.mat.color = COLORS[colorIdx].vec;
             }
         });
 
-        if (isResetting) {
-            startSmoothReset();
-        }
+        if (gameState.status === "DROPPED") startDrop();
+        else if (gameState.status !== "WINNER") animateDropGroup(0, false);
     }
 
     function updateScoreboard() {
@@ -874,7 +856,16 @@
         uiElements.leaderboardPageInfo.text = `Page ${uiState.leaderboardPage + 1} of ${totalPages}`;
     }
 
-    function updateUserStats(survivalTime, modeAtStart) {
+    // Freeze the current run's time. Called when the local player leaves the arena, and when the
+    // game ends while they are still standing (the winner), so a later timer reset can't zero it.
+    function captureSurvival() {
+        if (gameStartTime > 0) {
+            pendingSurvival = { time: Date.now() - gameStartTime, hard: gameModeAtStart, grid: gameGridModeAtStart, at: Date.now() };
+            gameStartTime = 0;
+        }
+    }
+
+    function updateUserStats(survivalTime, modeAtStart, gridModeAtStart, countFall) {
         console.log(`DROP GAME: Updating stats. SurvivalTime: ${survivalTime}, ModeAtStart: ${modeAtStart}`);
         const uid = scene.localUser.uid;
         const key = USER_DATA_KEY_PREFIX + uid;
@@ -886,10 +877,10 @@
                 stats = { ...stats, ...parsed };
             } catch (e) {} 
         }
-        stats.falls++;
+        if (countFall) stats.falls++;
         stats.name = scene.localUser.name.replace(/<[^>]*>/g, '');
         if (survivalTime > 0) {
-            const isSmall = gameGridModeAtStart === 'small';
+            const isSmall = gridModeAtStart === 'small';
             if (modeAtStart) { 
                 if (isSmall) { if (survivalTime > stats.bestHardSmall) stats.bestHardSmall = survivalTime; }
                 else { if (survivalTime > stats.bestHard) stats.bestHard = survivalTime; }
@@ -903,6 +894,11 @@
     }
 
     let lastTick = 0;
+    let lastDisplay = { text: null, color: null, visible: null };
+    let lastHostText = null;
+    function setHostText(t) {
+        if (t !== lastHostText) { lastHostText = t; uiElements.hostDisplay.text = t; }
+    }
     function update() {
         const now = Date.now();
 
@@ -933,10 +929,13 @@
                 updateState({ currentHostUid: lowestUid, hostStealStartTime: 0, hostStealRequesterUid: null });
             }
         } else if (!isGameFlowing || (gameState.status === "LOBBY" && gameStartTime !== 0)) {
-            // Only reset the timer if the game explicitly stops or enters initial pre-game reset
+            // The game ended while we were still standing (we won, or the host reset): keep the time.
             if (gameStartTime !== 0) {
-                console.log(`DROP GAME: Resetting survival timer (Game Stopped)`);
-                gameStartTime = 0;
+                console.log(`DROP GAME: Game stopped while standing, saving survival time`);
+                captureSurvival();
+                const run = pendingSurvival;
+                pendingSurvival = null;
+                if (isLocalInArena && run) updateUserStats(run.time, run.hard, run.grid, false);
             }
         }
 
@@ -962,20 +961,20 @@
         }
         else displayStr = "WAIT";
 
-        ui.displays.forEach(d => {
-            d.text.text = displayStr;
-            d.mat.color = colorVec;
-            d.cube.SetActive(colorVisible);
-        });
+        const colorKey = colorVisible ? gameState.targetColorIndex : -1;
+        if (displayStr !== lastDisplay.text) ui.displays.forEach(d => { d.text.text = displayStr; });
+        if (colorKey !== lastDisplay.color && colorVisible) ui.displays.forEach(d => { d.mat.color = colorVec; });
+        if (colorVisible !== lastDisplay.visible) ui.displays.forEach(d => d.cube.SetActive(colorVisible));
+        lastDisplay = { text: displayStr, color: colorVisible ? colorKey : lastDisplay.color, visible: colorVisible };
 
         if (uiElements.hostDisplay) {
             const hostUser = scene.users[gameState.currentHostUid];
             const requester = scene.users[gameState.hostStealRequesterUid];
             if (gameState.hostStealStartTime > 0 && requester) {
                 const remainingHost = Math.max(0, Math.ceil((TIMINGS.HOST_STEAL_DURATION - (now - gameState.hostStealStartTime)) / 1000));
-                uiElements.hostDisplay.text = `<color=#ff0000>STEALING HOST: ${remainingHost}s</color>\n(Requested by: ${requester.name})`;
+                setHostText(`<color=#ff0000>STEALING HOST: ${remainingHost}s</color>\n(Requested by: ${requester.name})`);
             } else {
-                uiElements.hostDisplay.text = hostUser ? `CURRENT HOST: ${hostUser.name}` : "NO HOST ASSIGNED";
+                setHostText(hostUser ? `CURRENT HOST: ${hostUser.name}` : "NO HOST ASSIGNED");
             }
         }
 
@@ -1077,11 +1076,17 @@
         let innerRotX = 0;
         let innerRotY = 0;
         
+        let lastSkyTime = performance.now();
         function animate() {
+            requestAnimationFrame(animate);
+            const nowMs = performance.now();
+            if (nowMs - lastSkyTime < 50) return;
+            const frames = (nowMs - lastSkyTime) / (1000 / 90);   // same speed as before at 90 fps
+            lastSkyTime = nowMs;
             // Different rotation speeds and axes create the shifting effect
-            outerRotY += 0.001;
-            innerRotX += 0.0005;
-            innerRotY -= 0.0015;
+            outerRotY += 0.001 * frames;
+            innerRotX += 0.0005 * frames;
+            innerRotY -= 0.0015 * frames;
             
             // Wrap angles to prevent floating point imprecision over hours
             if (outerRotY >= 360) outerRotY -= 360;
@@ -1090,7 +1095,6 @@
             // Apply rotations
             outerTransform.localEulerAngles = new BS.Vector3(0, outerRotY, 0);
             innerTransform.localEulerAngles = new BS.Vector3(innerRotX, innerRotY, 0);
-            requestAnimationFrame(animate);
         }
         // Start the loop
         animate();
