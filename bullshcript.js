@@ -122,6 +122,7 @@
         const settings = new BS.SceneSettings();
         settings.EnableTeleport = false;
         settings.EnableJump = true;
+        settings.EnableBirdFlight = false;
         settings.MaxOccupancy = 30;
         settings.RefreshRate = 90;
         settings.EnableHandHold = false;
